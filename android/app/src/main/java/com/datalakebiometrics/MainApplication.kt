@@ -16,6 +16,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+          add(BiometricPackage())
         },
     )
   }
@@ -23,5 +24,6 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+   
   }
 }
