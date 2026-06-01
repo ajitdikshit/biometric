@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, PermissionsAndroid, Alert, requireNativeComponent, TouchableOpacity, TextInput, ViewProps, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { initDatabase, saveOfflineLog, getPendingCount } from './localDB';
-import { registerNetworkSyncMonitor } from './sync';
+import { registerNetworkSyncMonitor, syncAndPurgeLogs } from './sync';
 
 interface LiveBiometricViewProps extends ViewProps {
   mode: string;
@@ -70,6 +70,9 @@ export default function App() {
         saveOfflineLog(matchedName || 'Unknown_User');
         setPendingLogs(getPendingCount());
         Alert.alert('ACCESS GRANTED', `Welcome back, ${matchedName}\n\n${message}`);
+        if (isOnline) {
+          syncAndPurgeLogs(setPendingLogs);
+        }
       } else {
         Alert.alert('REGISTRATION SUCCESSFUL', `Identity profile for '${matchedName}' has been secured inside the database.`);
       }
@@ -118,7 +121,7 @@ export default function App() {
                 <LiveBiometricView 
                   mode={currentMode}
                   registerName={activeRegisterName}
-                  style={StyleSheet.absoluteFillObject} 
+                  style={StyleSheet.absoluteFill} 
                   onVerified={handleVerificationEvent} 
                 />
               </>

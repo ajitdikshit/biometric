@@ -3,17 +3,22 @@ import { open } from 'react-native-quick-sqlite';
 const db = open({ name: 'datalake_logs.sqlite' });
 
 export const initDatabase = () => {
-  // Existing logs table
+  // Safe validation check to clear legacy monolithic table configurations
+  // Uncomment the line below for the first run if you need to wipe out old column structures:
+  db.execute(`DROP TABLE IF EXISTS attendance_logs;`);
+
+  // Relational table configuration isolating tracking attributes
   db.execute(
     `CREATE TABLE IF NOT EXISTS attendance_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
+      logger_name TEXT NOT NULL,
+      log_date TEXT NOT NULL,
+      log_time TEXT NOT NULL,
       status TEXT DEFAULT 'PENDING'
     );`
   );
   
-  // Table to store the registered user's name (Optional fallback)
+  // Permanent baseline container for the local primary user identity
   db.execute(
     `CREATE TABLE IF NOT EXISTS master_user (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,11 +40,16 @@ export const getMasterName = () => {
   return "Unknown Agent"; 
 };
 
-export const saveOfflineLog = (userName) => {
-  const timestamp = new Date().toISOString();
+export const saveOfflineLog = (loggerName) => {
+  const now = new Date();
+  
+  // Split timestamps cleanly into standard relational database segments
+  const logDate = now.toISOString().split('T')[0];  // Output: YYYY-MM-DD
+  const logTime = now.toTimeString().split(' ')[0]; // Output: HH:MM:SS
+
   db.execute(
-    'INSERT INTO attendance_logs (user_id, timestamp) VALUES (?, ?);',
-    [userName, timestamp]
+    'INSERT INTO attendance_logs (logger_name, log_date, log_time) VALUES (?, ?, ?);',
+    [loggerName, logDate, logTime]
   );
 };
 
