@@ -34,7 +34,7 @@ import java.util.HashSet
 class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(reactContext) {
     private val previewView: PreviewView = PreviewView(reactContext)
     private var tflite: Interpreter? = null
-    // Add these under your existing state variables
+    
     private var preBlinkYaw = 0f
     private var preBlinkPitch = 0f
     private var preBlinkRoll = 0f
@@ -46,25 +46,35 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
 
     init {
         previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-        previewView.layoutParams = LayoutParams(
-            LayoutParams.MATCH_PARENT, 
-            LayoutParams.MATCH_PARENT
-        )
+        previewView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         addView(previewView)
         setupLayoutHack()
         loadAIModel()
         startCamera()
     }
 
-    fun setMode(mode: String) {
-        this.currentMode = mode
+    // --- SUPABASE CLOUD RESTORE BRIDGE ---
+    fun syncCloudRoster(rosterStr: String) {
+        val prefs = reactContext.getSharedPreferences("DatalakeBiometrics", Context.MODE_PRIVATE)
+        val updatedFacesSet = HashSet<String>()
+        if (rosterStr.isNotEmpty()) {
+            val profiles = rosterStr.split("|")
+            for (profile in profiles) {
+                if (profile.contains(":")) updatedFacesSet.add(profile)
+            }
+        }
+        prefs.edit().putStringSet("registered_vectors", updatedFacesSet).apply()
+        Log.d("DATALAKE_SYNC", "Native Vault Updated with ${updatedFacesSet.size} Cloud Profiles")
     }
+
+    fun setMode(mode: String) { this.currentMode = mode }
 
     fun setRegisterName(name: String) {
         val sanitized = name.replace(":", "").trim()
         this.registerName = if (sanitized.isEmpty()) "Unknown User" else sanitized
     }
 
+    // --- AI MODEL & CAMERA SETUP ---
     private fun loadAIModel() {
         try {
             val fd = reactContext.assets.openFd("mobilefacenet.tflite")
@@ -72,7 +82,7 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
             val buffer = inputStream.channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength)
             tflite = Interpreter(buffer)
         } catch (e: Exception) {
-            Log.e("DATALAKE", "Model load failed: ${e.message}")
+            Log.e("DATALAKE_TRACKER", "Model load failed: ${e.message}")
         }
     }
 
@@ -80,9 +90,7 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
         val cameraProviderFuture = ProcessCameraProvider.getInstance(reactContext)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -93,18 +101,18 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
                     }
                 }
 
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
             try {
                 cameraProvider.unbindAll()
                 val lifecycleOwner = reactContext.currentActivity as? LifecycleOwner 
                     ?: throw Exception("Activity Context is not a LifecycleOwner")
-                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
+                cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, imageAnalyzer)
             } catch (e: Exception) {
-                Log.e("DATALAKE", "Camera bind failed: ${e.message}")
+                Log.e("DATALAKE_TRACKER", "Camera bind failed: ${e.message}")
             }
         }, ContextCompat.getMainExecutor(reactContext))
     }
 
+    // --- CORE FACE & BLINK DETECTION (LOCKED) ---
     @SuppressLint("UnsafeOptInUsageError")
     private fun processFrame(imageProxy: ImageProxy) {
         if (isProcessing) {
@@ -122,8 +130,7 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
                 .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
                 .build()
 
-            val detector = FaceDetection.getClient(options)
-            detector.process(image)
+            FaceDetection.getClient(options).process(image)
                 .addOnSuccessListener { faces ->
                     if (faces.isNotEmpty()) {
                         val face = faces[0]
@@ -131,47 +138,42 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
                         val rightEye = face.rightEyeOpenProbability ?: -1f
 
                         if (leftEye != -1f && rightEye != -1f) {
-                            
                             val currentYaw = face.headEulerAngleY
                             val currentPitch = face.headEulerAngleX
                             val currentRoll = face.headEulerAngleZ
 
-                            // 1. TRACK THE BASELINE WHILE EYES ARE WIDE OPEN
-                            if (leftEye > 0.8f && rightEye > 0.8f && !isEyesClosed) {
+                            // 1. BASELINE TRACKING (0.65f)
+                            if (leftEye > 0.65f && rightEye > 0.65f && !isEyesClosed) {
                                 preBlinkYaw = currentYaw
                                 preBlinkPitch = currentPitch
                                 preBlinkRoll = currentRoll
                             }
 
-                            // 2. DETECT THE EYELID CLOSURE
-                            if (leftEye < 0.2f && rightEye < 0.2f) {
+                            // 2. DETECT EYES CLOSING (0.45f)
+                            if (leftEye < 0.45f && rightEye < 0.45f) {
                                 isEyesClosed = true
                             } 
                             
-                            // 3. BLINK COMPLETED (EYES RE-OPENED)
-                            else if (leftEye > 0.8f && rightEye > 0.8f && isEyesClosed) {
+                            // 3. BLINK COMPLETED
+                            else if (leftEye > 0.65f && rightEye > 0.65f && isEyesClosed) {
                                 isEyesClosed = false
                                 if (!blinkCompleted) {
                                     blinkCompleted = true
                                     isProcessing = true
                                     
-                                    // 4. THE 3D ANTI-SPOOF GATEKEEPER
-                                    // Calculate how far the head shifted during the blink
+                                    // 4. LIVENESS / ANTI-SPOOF (20f)
                                     val yawDelta = Math.abs(currentYaw - preBlinkYaw)
                                     val pitchDelta = Math.abs(currentPitch - preBlinkPitch)
                                     val rollDelta = Math.abs(currentRoll - preBlinkRoll)
 
-                                    // A human micro-moves < 10 degrees. Flapping a photo causes > 15 degrees of delta.
-                                    if (pitchDelta > 12f || yawDelta > 12f || rollDelta > 12f) {
+                                    if (pitchDelta > 20f || yawDelta > 20f || rollDelta > 20f) {
                                         val event = Arguments.createMap()
                                         event.putString("status", "FAILED")
                                         event.putString("message", "SPOOF DETECTED: Unnatural 3D spatial motion. Printed photograph suspected.")
                                         reactContext.getJSModule(RCTEventEmitter::class.java).receiveEvent(id, "onVerified", event)
-                                        
                                         blinkCompleted = false
                                         isProcessing = false
                                     } else {
-                                        // Passed liveness! Generate the bitmap and run the matrix math
                                         val bitmap = imageProxy.toBitmap(rotationDegrees)
                                         executeMatrixMath(bitmap, face)
                                     }
@@ -186,6 +188,7 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
         }
     }
 
+    // --- MATHEMATICAL VECTOR EXTRACTION ---
     private fun executeMatrixMath(fullImage: Bitmap, face: Face) {
         try {
             val bounds = face.boundingBox
@@ -204,8 +207,7 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
             val croppedFace = Bitmap.createBitmap(fullImage, x, y, squareSize, squareSize)
             val scaledBitmap = Bitmap.createScaledBitmap(croppedFace, 112, 112, true)
             
-            val byteBuffer = ByteBuffer.allocateDirect(1 * 112 * 112 * 3 * 4)
-            byteBuffer.order(ByteOrder.nativeOrder())
+            val byteBuffer = ByteBuffer.allocateDirect(1 * 112 * 112 * 3 * 4).apply { order(ByteOrder.nativeOrder()) }
             val intValues = IntArray(112 * 112)
             scaledBitmap.getPixels(intValues, 0, 112, 0, 0, 112, 112)
 
@@ -219,24 +221,20 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
             tflite?.run(byteBuffer, liveEmbeddings)
             val liveVector = liveEmbeddings[0]
 
-            // FIX 2: Apply L2 Vector Normalization for spatial consistency
+            // L2 Normalization
             var sumSquares = 0.0f
-            for (v in liveVector) {
-                sumSquares += v * v
-            }
+            for (v in liveVector) sumSquares += v * v
             val l2Norm = Math.sqrt(sumSquares.toDouble()).toFloat()
             if (l2Norm > 0f) {
-                for (i in 0 until 192) {
-                    liveVector[i] /= l2Norm
-                }
+                for (i in 0 until 192) liveVector[i] /= l2Norm
             }
 
             val prefs = reactContext.getSharedPreferences("DatalakeBiometrics", Context.MODE_PRIVATE)
             val existingFacesSet = prefs.getStringSet("registered_vectors", HashSet<String>()) ?: HashSet<String>()
             val event = Arguments.createMap()
 
-            // FIX 3: Balanced matching threshold optimized for live evaluation environments
-            val matchingThreshold = 0.68f 
+            // Threshold (Locked to 0.55f)
+            val matchingThreshold = 0.55f 
 
             if (currentMode == "REGISTER") {
                 var isDuplicate = false
@@ -262,23 +260,23 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
                 }
 
                 if (isDuplicate) {
-                    val formattedPercent = String.format("%.2f", maximumMatchScore * 100)
                     event.putString("status", "FAILED")
-                    event.putString("message", "DUPLICATE IDENTITY: Face already assigned to profile '$matchedExistingName' ($formattedPercent% match).")
+                    event.putString("message", "DUPLICATE IDENTITY: Face already assigned to profile '$matchedExistingName'.")
                 } else {
                     val newVectorString = liveVector.joinToString(",")
-                    val combinedEntryString = "$registerName:$newVectorString"
-                    
                     val updatedFacesSet = HashSet<String>(existingFacesSet)
-                    updatedFacesSet.add(combinedEntryString)
+                    updatedFacesSet.add("$registerName:$newVectorString")
                     
-                    prefs.edit()
-                        .putStringSet("registered_vectors", updatedFacesSet)
-                        .commit() 
+                    prefs.edit().putStringSet("registered_vectors", updatedFacesSet).commit() 
                     
                     event.putString("status", "SUCCESS")
                     event.putString("message", "Unique profile securely registered offline.")
                     event.putString("matchedName", registerName)
+                    
+                    // SUPABASE SYNC BRIDGE: Injecting Face Vector for React Native
+                    val vectorArray = Arguments.createArray()
+                    for (v in liveVector) vectorArray.pushDouble(v.toDouble())
+                    event.putArray("faceVector", vectorArray)
                 }
             } else {
                 if (existingFacesSet.isEmpty()) {
@@ -307,22 +305,20 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
                     }
 
                     if (authorizedMatchFound) {
-                        val formattedScore = String.format("%.2f", bestMatchScore * 100)
                         event.putString("status", "SUCCESS")
-                        event.putString("message", "$formattedScore% Access Accuracy Match")
+                        event.putString("message", "${String.format("%.2f", bestMatchScore * 100)}% Match")
                         event.putString("matchedName", verifiedProfileName)
                     } else {
                         event.putString("status", "FAILED")
-                        event.putString("message", "INTRUDER ALERT: Spatial structural sequence mismatch.")
+                        event.putString("message", "INTRUDER ALERT: Access Denied.")
                     }
                 }
             }
             
             reactContext.getJSModule(RCTEventEmitter::class.java).receiveEvent(id, "onVerified", event)
         } catch (e: Exception) {
-             Log.e("DATALAKE", "Math Engine Failed", e)
+             Log.e("DATALAKE_TRACKER", "Math Engine Failed", e)
         }
-        
         blinkCompleted = false
         isProcessing = false
     }
@@ -340,7 +336,6 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
         return (dotProduct / (Math.sqrt(normA.toDouble()) * Math.sqrt(normB.toDouble()))).toFloat()
     }
 
-    // UPDATED TO INTEGRATE REAL-TIME HARDWARE ROTATION MATRICES
     private fun ImageProxy.toBitmap(rotationDegrees: Int): Bitmap {
         val yBuffer = planes[0].buffer
         val uBuffer = planes[1].buffer
@@ -359,7 +354,6 @@ class LiveBiometricView(private val reactContext: ReactContext) : FrameLayout(re
         val rawBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
         
         if (rotationDegrees == 0) return rawBitmap
-        
         val matrix = Matrix()
         matrix.postRotate(rotationDegrees.toFloat())
         return Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)

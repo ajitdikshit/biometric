@@ -22,6 +22,14 @@ class LiveBiometricViewManager : ViewGroupManager<LiveBiometricView>() {
         view.setRegisterName(name)
     }
 
+    // --- SUPABASE CLOUD RESTORE BRIDGE ---
+    @ReactProp(name = "nativeRoster")
+    fun setNativeRoster(view: LiveBiometricView, rosterStr: String?) {
+        if (rosterStr != null) {
+            view.syncCloudRoster(rosterStr)
+        }
+    }
+
     override fun getExportedCustomBubblingEventTypeConstants(): Map<String, Any> {
         return MapBuilder.builder<String, Any>()
             .put("onVerified", MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onVerified")))
