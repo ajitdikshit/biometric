@@ -2,11 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, View, Text, PermissionsAndroid, 
   requireNativeComponent, TouchableOpacity, TextInput, 
-  ViewProps, Keyboard, TouchableWithoutFeedback, Modal, FlatList 
+  ViewProps, Keyboard, TouchableWithoutFeedback, Modal, FlatList,
+  StatusBar, Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { initDatabase, saveOfflineLog, getPendingCount, restoreUserFromCloud, saveMasterName, getAllMasterUsers } from './localDB';
+import { 
+  initDatabase, saveOfflineLog, getPendingCount, restoreUserFromCloud, 
+  saveMasterName, getAllMasterUsers, saveLanguageSetting, getLanguageSetting,
+  saveThemeSetting, getThemeSetting // 🚨 NEW THEME DB IMPORTS
+} from './localDB';
 import { registerNetworkSyncMonitor, syncAndPurgeLogs, backupIdentityToCloud, restoreIdentitiesFromCloud } from './sync';
 
 interface LiveBiometricViewProps extends ViewProps {
@@ -16,6 +21,8 @@ interface LiveBiometricViewProps extends ViewProps {
   onVerified: (event: any) => void;
 }
 const LiveBiometricView = requireNativeComponent<LiveBiometricViewProps>('LiveBiometricView');
+
+const { height } = Dimensions.get('window');
 
 export default function App() {
   const [pendingLogs, setPendingLogs] = useState(0);
@@ -33,8 +40,37 @@ export default function App() {
   const [attendanceLog, setAttendanceLog] = useState('');
   const [registrationLog, setRegistrationLog] = useState('');
   const [systemLog, setSystemLog] = useState('');
+  
+  const [currentTime, setCurrentTime] = useState('');
 
-  // 🚨 AUTOMATIC STARTUP INJECTION
+  // 🚨 NEW FEATURES STATE
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  const [lang, setLang] = useState('en');
+
+  // 🌐 DYNAMIC TRANSLATIONS
+  const t = {
+    brand: lang === 'en' ? 'DATALAKE BIOMETRICS' : 'डेटालेक बायोमेट्रिक्स',
+    online: lang === 'en' ? 'ONLINE' : 'ऑनलाइन',
+    offline: lang === 'en' ? 'OFFLINE' : 'ऑफ़लाइन',
+    faceScan: lang === 'en' ? 'FACE SCAN' : 'चेहरा स्कैन',
+    standby: lang === 'en' ? 'STANDBY' : 'स्टैंडबाय',
+    helper: lang === 'en' ? 'Align face inside frame • Hold steady' : 'चेहरे को फ्रेम में रखें • स्थिर रहें',
+    telemetry: lang === 'en' ? 'LIVE TELEMETRY' : 'लाइव टेलीमेट्री',
+    attendance: lang === 'en' ? 'ATTENDANCE' : 'उपस्थिति',
+    enrollment: lang === 'en' ? 'ENROLLMENT' : 'पंजीकरण',
+    system: lang === 'en' ? 'SYSTEM' : 'सिस्टम',
+    liveness: lang === 'en' ? 'LIVENESS' : 'सजीवता',
+    regBtn: lang === 'en' ? 'Register User' : 'उपयोगकर्ता बनाएं',
+    regSub: lang === 'en' ? 'Enroll new face' : 'नया चेहरा जोड़ें',
+    logBtn: lang === 'en' ? 'Login' : 'लॉग इन',
+    logSub: lang === 'en' ? 'Verify identity' : 'पहचान सत्यापित करें',
+    viewBtn: lang === 'en' ? 'View Users' : 'सूची देखें',
+    viewSub: lang === 'en' ? 'Manage roster' : 'उपयोगकर्ता प्रबंधित करें',
+    syncBtn: lang === 'en' ? 'Fetch Database' : 'डेटाबेस सिंक',
+    syncSub: lang === 'en' ? 'Sync records' : 'रिकॉर्ड अपडेट करें',
+  };
+
   const syncLocalRosterToEdge = () => {
     const users = getAllMasterUsers();
     if (users && users.length > 0) {
@@ -44,37 +80,53 @@ export default function App() {
           const parsed = typeof u.face_vector === 'string' ? JSON.parse(u.face_vector) : u.face_vector;
           if (Array.isArray(parsed)) arr = parsed;
         } catch(e) {}
-        // Local DB uses 'name', Supabase uses 'face_name'
         return `${u.name}:${(arr || []).join(',')}`; 
       }).join('|');
       
       setNativeCloudPayload(formattedKotlinString);
-      setSystemLog(`📱 Injected ${users.length} local profiles to native vault.`);
+      setSystemLog(`Injected ${users.length} profiles to vault.`);
     } else {
-      setSystemLog(`📱 No local profiles found on startup.`);
+      setSystemLog(`No local profiles found.`);
     }
   };
 
   useEffect(() => {
     initDatabase();
+    
+    // 🚨 LOAD SAVED LANGUAGE & THEME ON STARTUP
+    const savedLang = getLanguageSetting();
+    if (savedLang) {
+      setLang(savedLang);
+    }
+    
+    const savedTheme = getThemeSetting();
+    setIsDark(savedTheme);
+
     setPendingLogs(getPendingCount());
     requestCameraPermission();
-
-    // 🚨 FIRE THE INJECTION ON APP START
     syncLocalRosterToEdge();
 
     const unsubscribeNetwork = registerNetworkSyncMonitor(setPendingLogs, setIsOnline, setSystemLog);
-    return () => unsubscribeNetwork();
+    
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('en-IN', { hour12: false }));
+    }, 1000);
+
+    return () => {
+      unsubscribeNetwork();
+      clearInterval(timer);
+    };
   }, []);
 
   const requestCameraPermission = async () => {
     try {
       const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
       if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        setSystemLog('⚠️ CAMERA REQUIRED: Please grant permissions.');
+        setSystemLog('CAMERA REQUIRED: Please grant permissions.');
       }
     } catch (err) {
-      setSystemLog('⚠️ CAMERA ERROR: Activity not ready.');
+      setSystemLog('CAMERA ERROR: Activity not ready.');
     }
   };
 
@@ -87,14 +139,14 @@ export default function App() {
 
   const confirmRegistrationIntent = () => {
     if (nameInput.trim().length === 0) {
-      setRegistrationLog('⚠️ REQUIRED FIELD: Please enter a name.');
+      setRegistrationLog('REQUIRED: Enter a name.');
       return;
     }
     Keyboard.dismiss();
     setActiveRegisterName(nameInput.trim());
     setIsPromptingName(false);
     setCameraActive(true);
-    setRegistrationLog(`Awaiting face scan for ${nameInput.trim()}...`);
+    setRegistrationLog(`Awaiting scan: ${nameInput.trim()}`);
   };
 
   const startVerificationProcess = () => {
@@ -111,7 +163,7 @@ export default function App() {
   };
 
   const executeCloudToEdgeSync = async () => {
-    setSystemLog("☁️ Fetching identities from Supabase...");
+    setSystemLog("Fetching identities from Supabase...");
     const roster = await restoreIdentitiesFromCloud(restoreUserFromCloud, setSystemLog);
     
     if (roster && roster.length > 0) {
@@ -137,8 +189,7 @@ export default function App() {
       if (currentMode === 'VERIFY') {
         saveOfflineLog(matchedName || 'Unknown_User');
         setPendingLogs(getPendingCount());
-        
-        setAttendanceLog(`✅ Welcome ${matchedName}`);
+        setAttendanceLog(`Welcome ${matchedName}`);
         
         if (isOnline) {
           syncAndPurgeLogs(setPendingLogs, setSystemLog);
@@ -151,58 +202,136 @@ export default function App() {
         }
 
         if (finalVector && finalVector.length > 0) {
-          setRegistrationLog(`🔵 Registration for ${matchedName} successful`);
+          setRegistrationLog(`Registered ${matchedName} successfully`);
           saveMasterName(matchedName, finalVector);
+          syncLocalRosterToEdge();
           
           if (isOnline) {
             backupIdentityToCloud(matchedName, finalVector, setSystemLog);
           }
         } else {
-          setSystemLog(`⚠️ KOTLIN LOCKED: Native vault refused math array.`);
+          setSystemLog(`KOTLIN LOCKED: Vault refused array.`);
         }
       }
     } else {
-      setSystemLog(`❌ SECURITY: ${message}`);
+      setSystemLog(`${message}`);
     }
   };
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.root, isDark && styles.rootDark]} edges={['right', 'bottom', 'left']}>
+        <StatusBar hidden={true} />
         
-        <View style={styles.header}>
-          <Text style={styles.headerText}>DATALAKE BIOMETRICS</Text>
-          <Text style={[styles.subText, { color: isOnline ? '#00ffcc' : '#ff4444' }]}>
-            {isOnline ? 'CLOUD SYNC ACTIVE' : 'OFFLINE TERMINAL ACTIVE'}
-          </Text>
-        </View>
-        
-        <View style={styles.queueContainer}>
-          <Text style={styles.queueText}>OFFLINE LOGS PENDING: {pendingLogs}</Text>
+        {/* TOP BAR WITH MENU ICON */}
+        <View style={styles.topbar}>
+          <View style={styles.brandContainer}>
+            <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.menuIconBox}>
+              <Text style={styles.menuIcon}>☰</Text>
+            </TouchableOpacity>
+            <Text style={styles.brand}>{t.brand}</Text>
+          </View>
+          <View style={styles.statusPill}>
+            <View style={[styles.dot, isOnline && styles.dotOnline]} />
+            <Text style={styles.statusText}>{isOnline ? t.online : t.offline}</Text>
+          </View>
         </View>
 
-        <View style={styles.cameraBox}>
-           {isPromptingName ? (
-              <View style={styles.promptContainer}>
-                 <Text style={styles.promptTitle}>ENTER IDENTITY NAME</Text>
-                 <TextInput 
-                    style={styles.inputField}
+        {/* POLISHED PREMIUM SIDE MENU MODAL */}
+        <Modal 
+          visible={isMenuVisible} 
+          transparent={true} 
+          animationType="fade" 
+          statusBarTranslucent={true} // 🚨 Fixes the top edge gap 
+          onRequestClose={() => setIsMenuVisible(false)}
+        >
+          <View style={styles.premiumOverlay}>
+            <TouchableOpacity style={styles.premiumOverlayBackground} activeOpacity={1} onPress={() => setIsMenuVisible(false)} />
+            
+            <View style={[styles.premiumDrawer, isDark && styles.surfaceDark]}>
+              <Text style={[styles.premiumHeader, isDark && styles.textDark]}>SETTINGS</Text>
+
+              {/* Theme Section */}
+              <View style={styles.premiumSection}>
+                <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>APP THEME</Text>
+                <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.segmentButton, !isDark ? styles.segmentActive : styles.segmentInactive]}
+                    onPress={() => {
+                      setIsDark(false);
+                      saveThemeSetting(false); // 🚨 SAVE TO SQLITE
+                    }}
+                  >
+                    <Text style={[styles.segmentText, !isDark ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>Light</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.segmentButton, isDark ? styles.segmentActiveDark : styles.segmentInactive]}
+                    onPress={() => {
+                      setIsDark(true);
+                      saveThemeSetting(true); // 🚨 SAVE TO SQLITE
+                    }}
+                  >
+                    <Text style={[styles.segmentText, isDark ? styles.segmentTextActive : styles.segmentTextInactive]}>Dark</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Language Section */}
+              <View style={styles.premiumSection}>
+                <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>LANGUAGE</Text>
+                <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.segmentButton, lang === 'en' ? (isDark ? styles.segmentActiveDark : styles.segmentActive) : styles.segmentInactive]}
+                    onPress={() => {
+                      setLang('en');
+                      saveLanguageSetting('en'); 
+                    }}
+                  >
+                    <Text style={[styles.segmentText, lang === 'en' ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>English</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.segmentButton, lang === 'hi' ? (isDark ? styles.segmentActiveDark : styles.segmentActive) : styles.segmentInactive]}
+                    onPress={() => {
+                      setLang('hi');
+                      saveLanguageSetting('hi'); 
+                    }}
+                  >
+                    <Text style={[styles.segmentText, lang === 'hi' ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>हिंदी</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+            </View>
+          </View>
+        </Modal>
+
+        {/* CAMERA ZONE */}
+        <View style={[styles.camZone, isDark && styles.surfaceDark]}>
+          <Text style={[styles.camLabel, isDark && styles.textSubDark]}>{t.faceScan}</Text>
+          <View style={styles.camFrameOuter}>
+            <View style={[styles.camFrame, isDark && styles.camFrameDark]}>
+              
+              {isPromptingName ? (
+                <View style={styles.promptContainer}>
+                  <Text style={styles.promptTitle}>ENTER IDENTITY</Text>
+                  <TextInput 
+                    style={[styles.inputField, isDark && styles.inputDark]}
                     placeholder="e.g. Ajit Dikshit"
-                    placeholderTextColor="#555"
+                    placeholderTextColor="#94a3b8"
                     value={nameInput}
                     onChangeText={setNameInput}
                     autoFocus={true}
                     maxLength={25}
-                 />
-                 <TouchableOpacity style={styles.promptConfirmBtn} onPress={confirmRegistrationIntent}>
-                    <Text style={styles.promptConfirmBtnText}>PROCEED TO SCAN</Text>
-                 </TouchableOpacity>
-              </View>
-           ) : cameraActive ? (
-              <>
-                <Text style={styles.challengeText}>
-                    BLINK TO {currentMode}
-                </Text>
+                  />
+                  <TouchableOpacity style={styles.promptConfirmBtn} onPress={confirmRegistrationIntent}>
+                    <Text style={styles.promptConfirmBtnText}>SCAN</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : cameraActive ? (
                 <LiveBiometricView 
                   mode={currentMode}
                   registerName={activeRegisterName}
@@ -210,71 +339,114 @@ export default function App() {
                   style={StyleSheet.absoluteFill} 
                   onVerified={handleVerificationEvent} 
                 />
-              </>
-           ) : (
-              <Text style={styles.cameraText}>SYSTEM STANDBY</Text>
-           )}
-        </View>
+              ) : (
+                <Text style={styles.standbyText}>{t.standby}</Text>
+              )}
 
-        <View style={styles.terminalBox}>
-          <Text style={styles.terminalTitle}>LIVE TELEMETRY</Text>
-          <Text style={styles.logText}>
-            <Text style={{color: '#00ffcc'}}>ATTENDANCE: </Text> 
-            {attendanceLog || 'Awaiting scan...'}
-          </Text>
-          <Text style={styles.logText}>
-            <Text style={{color: '#00aaff'}}>ENROLLMENT: </Text> 
-            {registrationLog || 'Awaiting registration...'}
-          </Text>
-          <Text style={styles.logText}>
-            <Text style={{color: '#ffaa00'}}>SYSTEM:     </Text> 
-            {systemLog || 'All systems operational.'}
-          </Text>
-        </View>
-
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={[styles.button, styles.registerButton]} onPress={handleRegisterPress}>
-            <Text style={styles.buttonText}>REGISTER FACE</Text>
-          </TouchableOpacity>
-          
-          <View style={styles.iconGroup}>
-            <TouchableOpacity style={styles.iconButton} onPress={executeCloudToEdgeSync}>
-              <Text style={styles.iconText}>☁️</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.iconButton} onPress={handleOpenRoster}>
-              <Text style={styles.iconText}>📋</Text>
-            </TouchableOpacity>
+            </View>
+            <View style={[styles.corner, styles.tl]} />
+            <View style={[styles.corner, styles.tr]} />
+            <View style={[styles.corner, styles.bl]} />
+            <View style={[styles.corner, styles.br]} />
           </View>
+          <View style={styles.helperRow}>
+            <View style={styles.helperDot} />
+            <Text style={[styles.helperText, isDark && styles.textSubDark]}>{t.helper}</Text>
+          </View>
+        </View>
 
-          <TouchableOpacity style={[styles.button, styles.verifyButton]} onPress={startVerificationProcess}>
-            <Text style={[styles.buttonText, { color: '#000' }]} >LOGIN</Text>
+        {/* TELEMETRY ZONE */}
+        <View style={[styles.telemetry, isDark && styles.surfaceDark]}>
+          <View style={styles.teleHeader}>
+            <Text style={[styles.teleTitle, isDark && styles.textSubDark]}>{t.telemetry}</Text>
+            <Text style={styles.teleTimestamp}>{currentTime}</Text>
+          </View>
+          <View style={styles.teleGrid}>
+            
+            <View style={[styles.teleCard, isDark && styles.cardDark]}>
+              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.attendance}</Text>
+              <Text style={[styles.teleCardValue, styles.valBlue]} numberOfLines={1}>{attendanceLog || 'Awaiting Scan'}</Text>
+              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Scans logged locally</Text>
+            </View>
+
+            <View style={[styles.teleCard, isDark && styles.cardDark]}>
+              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.enrollment}</Text>
+              <Text style={[styles.teleCardValue, styles.valTeal]} numberOfLines={1}>{registrationLog || 'Idle'}</Text>
+              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Ready for capture</Text>
+            </View>
+
+            <View style={[styles.teleCard, isDark && styles.cardDark]}>
+              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.system}</Text>
+              <Text style={[styles.teleCardValue, styles.valGreen]} numberOfLines={1}>{isOnline ? 'Stable' : 'Sync Pending'}</Text>
+              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>{isOnline ? 'All checks pass' : `Pending Logs: ${pendingLogs}`}</Text>
+            </View>
+
+            <View style={[styles.teleCard, isDark && styles.cardDark]}>
+              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.liveness}</Text>
+              <Text style={[styles.teleCardValue, styles.valAmber]} numberOfLines={1}>{systemLog || 'Checking...'}</Text>
+              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Anti-spoof active</Text>
+            </View>
+
+          </View>
+        </View>
+
+        {/* ACTION BUTTONS */}
+        <View style={styles.actions}>
+          <TouchableOpacity style={[styles.btn, styles.btnBlue]} onPress={handleRegisterPress}>
+            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}><Text style={{fontSize: 16}}>👤</Text></View>
+            <Text style={[styles.btnLabel, { color: '#fff' }]}>{t.regBtn}</Text>
+            <Text style={[styles.btnSub, { color: '#fff' }]}>{t.regSub}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.btn, styles.btnTeal]} onPress={startVerificationProcess}>
+            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}><Text style={{fontSize: 16}}>🔓</Text></View>
+            <Text style={[styles.btnLabel, { color: '#003d45' }]}>{t.logBtn}</Text>
+            <Text style={[styles.btnSub, { color: '#003d45' }]}>{t.logSub}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.btn, styles.btnOutline, isDark && styles.btnOutlineDark]} onPress={handleOpenRoster}>
+            <View style={[styles.btnIcon, { backgroundColor: isDark ? '#1a73e8' : '#eaf2ff' }]}><Text style={{fontSize: 16}}>👥</Text></View>
+            <Text style={[styles.btnLabel, { color: isDark ? '#fff' : '#1a73e8' }]}>{t.viewBtn}</Text>
+            <Text style={[styles.btnSub, { color: isDark ? '#fff' : '#1a73e8' }]}>{t.viewSub}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.btn, styles.btnDark]} onPress={executeCloudToEdgeSync}>
+            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.12)' }]}><Text style={{fontSize: 16}}>🗄️</Text></View>
+            <Text style={[styles.btnLabel, { color: '#fff' }]}>{t.syncBtn}</Text>
+            <Text style={[styles.btnSub, { color: '#fff' }]}>{t.syncSub}</Text>
           </TouchableOpacity>
         </View>
 
-        <Modal visible={showRosterModal} animationType="slide" transparent={true} onRequestClose={() => setShowRosterModal(false)}>
+        {/* ROSTER MODAL */}
+        <Modal 
+          visible={showRosterModal} 
+          animationType="slide" 
+          transparent={true} 
+          statusBarTranslucent={true} // 🚨 Fixes the top edge gap 
+          onRequestClose={() => setShowRosterModal(false)}
+        >
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>LOCAL IDENTITY ROSTER</Text>
-              <View style={styles.tableHeader}>
+            <View style={[styles.modalContent, isDark && styles.surfaceDark]}>
+              <Text style={styles.modalTitle}>LOCAL ROSTER</Text>
+              <View style={[styles.tableHeader, isDark && {borderBottomColor: '#334155'}]}>
                 <Text style={[styles.tableHeaderText, {flex: 0.3}]}>ID</Text>
-                <Text style={[styles.tableHeaderText, {flex: 0.7}]}>REGISTERED NAME</Text>
+                <Text style={[styles.tableHeaderText, {flex: 0.7}]}>NAME</Text>
               </View>
               {localUsers.length === 0 ? (
-                <Text style={styles.emptyText}>No identities found in local edge node.</Text>
+                <Text style={styles.emptyText}>No identities found.</Text>
               ) : (
                 <FlatList 
                   data={localUsers}
                   keyExtractor={(item) => item.id.toString()}
                   renderItem={({item}) => (
-                    <View style={styles.tableRow}>
-                      <Text style={[styles.tableCellText, {flex: 0.3}]}>{item.id}</Text>
-                      <Text style={[styles.tableCellText, {flex: 0.7}]}>{item.name}</Text>
+                    <View style={[styles.tableRow, isDark && {borderBottomColor: '#1e293b'}]}>
+                      <Text style={[styles.tableCellText, isDark && styles.textDark, {flex: 0.3}]}>{item.id}</Text>
+                      <Text style={[styles.tableCellText, isDark && styles.textDark, {flex: 0.7}]}>{item.name}</Text>
                     </View>
                   )}
                 />
               )}
-              <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowRosterModal(false)}>
+              <TouchableOpacity style={[styles.closeModalBtn, isDark && {backgroundColor: '#1e293b', borderColor: '#334155'}]} onPress={() => setShowRosterModal(false)}>
                 <Text style={styles.closeModalBtnText}>CLOSE CONSOLE</Text>
               </TouchableOpacity>
             </View>
@@ -287,45 +459,102 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' },
-  header: { position: 'absolute', top: 40, alignItems: 'center' },
-  headerText: { color: '#00ffcc', fontSize: 22, fontWeight: '900', letterSpacing: 2 },
-  subText: { fontSize: 12, marginTop: 5, letterSpacing: 1, fontWeight: 'bold' },
-  queueContainer: { backgroundColor: '#111', padding: 10, borderRadius: 8, marginBottom: 15, marginTop: 70 },
-  queueText: { color: '#fff', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 },
+  root: { flex: 1, backgroundColor: '#eaf2ff' },
   
-  cameraBox: { width: 320, height: 350, borderWidth: 2, borderColor: '#333', borderRadius: 15, backgroundColor: '#111', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  challengeText: { color: '#00ffcc', fontWeight: '900', fontSize: 16, textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.7)', width: '100%', padding: 15, position: 'absolute', top: 0, zIndex: 10 },
-  cameraText: { color: '#555', fontWeight: 'bold', letterSpacing: 2, fontSize: 16 },
+  // DYNAMIC DARK MODE COLORS
+  rootDark: { backgroundColor: '#0f172a' },
+  surfaceDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  cardDark: { backgroundColor: '#0f172a', borderColor: '#334155' },
+  textDark: { color: '#f8fafc' },
+  textSubDark: { color: '#94a3b8' },
+  camFrameDark: { backgroundColor: '#0f172a' },
+  inputDark: { backgroundColor: '#334155', color: '#f8fafc', borderColor: '#475569' },
+  btnOutlineDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
 
-  terminalBox: { width: 320, backgroundColor: '#111', borderWidth: 1, borderColor: '#333', borderRadius: 10, padding: 15, marginBottom: 25 },
-  terminalTitle: { color: '#555', fontSize: 10, fontWeight: 'bold', marginBottom: 10, letterSpacing: 2 },
-  logText: { color: '#ccc', fontSize: 11, marginBottom: 5, fontFamily: 'monospace' },
-  
-  buttonRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  button: { paddingVertical: 18, paddingHorizontal: 20, borderRadius: 30, elevation: 5 },
-  registerButton: { backgroundColor: '#333', borderWidth: 1, borderColor: '#555' },
-  verifyButton: { backgroundColor: '#00ffcc' },
-  buttonText: { color: '#fff', fontWeight: '900', fontSize: 14, letterSpacing: 1 },
-  
-  iconGroup: { flexDirection: 'row', gap: 5 },
-  iconButton: { backgroundColor: '#222', padding: 12, borderRadius: 50, borderWidth: 1, borderColor: '#444', width: 50, height: 50, alignItems: 'center', justifyContent: 'center' },
-  iconText: { fontSize: 18 },
+  // TOP BAR
+  topbar: { backgroundColor: '#1a73e8', paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  brandContainer: { flexDirection: 'row', alignItems: 'center' },
+  menuIconBox: { marginRight: 12, padding: 4 },
+  menuIcon: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  brand: { color: '#fff', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
+  statusPill: { backgroundColor: 'rgba(255, 255, 255, 0.18)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.35)', borderRadius: 20, paddingVertical: 4, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' },
+  dot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#f87171', marginRight: 6 },
+  dotOnline: { backgroundColor: '#4ade80' },
+  statusText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
-  promptContainer: { width: '100%', padding: 20, alignItems: 'center' },
-  promptTitle: { color: '#00ffcc', fontWeight: 'bold', fontSize: 14, marginBottom: 15, letterSpacing: 1 },
-  inputField: { width: '100%', height: 50, backgroundColor: '#222', borderRadius: 10, color: '#fff', paddingHorizontal: 15, fontSize: 16, borderWidth: 1, borderColor: '#444', marginBottom: 20 },
-  promptConfirmBtn: { backgroundColor: '#00ffcc', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 20 },
-  promptConfirmBtnText: { color: '#000', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
+  // 💎 NEW PREMIUM DRAWER STYLES 💎
+  premiumOverlay: { flex: 1, flexDirection: 'row' },
+  premiumOverlayBackground: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
+  premiumDrawer: { width: '75%', backgroundColor: '#FFFFFF', height: height, paddingTop: 60, paddingHorizontal: 24, shadowColor: '#000', shadowOffset: { width: -5, height: 0 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 },
+  premiumHeader: { fontSize: 20, fontWeight: '800', color: '#1A73E8', letterSpacing: 1.2, marginBottom: 40 },
+  premiumSection: { marginBottom: 35 },
+  premiumSectionTitle: { fontSize: 12, fontWeight: '700', color: '#707A8A', letterSpacing: 1.5, marginBottom: 12 },
+  segmentContainer: { flexDirection: 'row', backgroundColor: '#F1F3F4', borderRadius: 12, padding: 4 },
+  segmentContainerDark: { backgroundColor: '#0f172a' },
+  segmentButton: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  segmentActive: { backgroundColor: '#1A73E8', shadowColor: '#1A73E8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 },
+  segmentActiveDark: { backgroundColor: '#1A73E8', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4, elevation: 2 },
+  segmentInactive: { backgroundColor: 'transparent' },
+  segmentText: { fontSize: 14, fontWeight: '700' },
+  segmentTextActive: { color: '#FFFFFF' },
+  segmentTextInactive: { color: '#5F6368' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', height: '60%', backgroundColor: '#111', borderWidth: 2, borderColor: '#333', borderRadius: 15, padding: 20 },
-  modalTitle: { color: '#00ffcc', fontSize: 18, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginBottom: 20 },
-  tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#444', paddingBottom: 10, marginBottom: 10 },
-  tableHeaderText: { color: '#888', fontWeight: 'bold', fontSize: 12, letterSpacing: 1 },
-  tableRow: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#222' },
-  tableCellText: { color: '#fff', fontSize: 14 },
-  emptyText: { color: '#555', textAlign: 'center', marginTop: 40, fontStyle: 'italic' },
-  closeModalBtn: { backgroundColor: '#333', padding: 15, borderRadius: 10, marginTop: 'auto', alignItems: 'center', borderWidth: 1, borderColor: '#555' },
-  closeModalBtnText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 }
+  // CAMERA ZONE
+  camZone: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  camLabel: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1, alignSelf: 'flex-start', marginBottom: 10 },
+  camFrameOuter: { position: 'relative', width: 220, height: 220, marginBottom: 12 },
+  camFrame: { width: '100%', height: '100%', borderRadius: 14, backgroundColor: '#f0f7ff', borderWidth: 2.5, borderColor: '#1a73e8', overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
+  standbyText: { color: '#1a73e8', fontWeight: 'bold', letterSpacing: 2, opacity: 0.5 },
+  corner: { position: 'absolute', width: 22, height: 22, borderColor: '#1a73e8' },
+  tl: { top: -2, left: -2, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 4 },
+  tr: { top: -2, right: -2, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 4 },
+  bl: { bottom: -2, left: -2, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 4 },
+  br: { bottom: -2, right: -2, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 4 },
+  helperRow: { flexDirection: 'row', alignItems: 'center' },
+  helperDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00bcd4', marginRight: 6 },
+  helperText: { fontSize: 11, color: '#5a6b8c' },
+
+  promptContainer: { width: '90%', padding: 10, alignItems: 'center' },
+  promptTitle: { color: '#1a73e8', fontWeight: 'bold', fontSize: 12, marginBottom: 10, letterSpacing: 1 },
+  inputField: { width: '100%', height: 40, backgroundColor: '#fff', borderRadius: 8, color: '#0b1b3a', paddingHorizontal: 10, fontSize: 14, borderWidth: 1, borderColor: '#d0e4ff', marginBottom: 10 },
+  promptConfirmBtn: { backgroundColor: '#1a73e8', paddingVertical: 8, paddingHorizontal: 20, borderRadius: 10 },
+  promptConfirmBtnText: { color: '#fff', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
+
+  // TELEMETRY ZONE
+  telemetry: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 10, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  teleHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  teleTitle: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1 },
+  teleTimestamp: { fontSize: 10, color: '#94a3b8' },
+  teleGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  teleCard: { width: '48%', backgroundColor: '#f7fbff', borderRadius: 8, borderWidth: 1, borderColor: '#dbeafe', padding: 6, marginBottom: 5 },
+  teleCardLabel: { fontSize: 8, color: '#5a6b8c', letterSpacing: 0.5, marginBottom: 1 },
+  teleCardValue: { fontSize: 11, fontWeight: '700' },
+  valBlue: { color: '#1a73e8' },
+  valTeal: { color: '#00bcd4' },
+  valGreen: { color: '#10b981' },
+  valAmber: { color: '#f59e0b' },
+  teleCardSub: { fontSize: 7, color: '#94a3b8', marginTop: 1 },
+
+  // ACTIONS (Added subtle shadows to make them pop)
+  actions: { marginHorizontal: 14, marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  btn: { width: '48%', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8, flexDirection: 'column', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3 },
+  btnBlue: { backgroundColor: '#1a73e8' },
+  btnTeal: { backgroundColor: '#00bcd4' },
+  btnOutline: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#1a73e8', elevation: 0 },
+  btnDark: { backgroundColor: '#0b1b3a' },
+  btnIcon: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
+  btnLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
+  btnSub: { fontSize: 9, opacity: 0.7 },
+
+  // MODAL OVERLAY
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(11, 27, 58, 0.8)', justifyContent: 'flex-start', alignItems: 'flex-start' },
+  modalContent: { width: '85%', height: '60%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#d0e4ff', borderRadius: 16, padding: 20, alignSelf: 'center', marginTop: '30%', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 15 },
+  modalTitle: { color: '#1a73e8', fontSize: 16, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginBottom: 20 },
+  tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#dbeafe', paddingBottom: 10, marginBottom: 10 },
+  tableHeaderText: { color: '#5a6b8c', fontWeight: 'bold', fontSize: 11, letterSpacing: 1 },
+  tableRow: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f7ff' },
+  tableCellText: { color: '#0b1b3a', fontSize: 13 },
+  emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: 40, fontStyle: 'italic' },
+  closeModalBtn: { backgroundColor: '#eaf2ff', padding: 15, borderRadius: 10, marginTop: 'auto', alignItems: 'center', borderWidth: 1, borderColor: '#d0e4ff' },
+  closeModalBtnText: { color: '#1a73e8', fontWeight: 'bold', letterSpacing: 1 }
 });

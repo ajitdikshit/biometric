@@ -5,7 +5,8 @@ const db = open({ name: 'datalake_logs.sqlite' });
 export const initDatabase = () => {
   // KEEP THIS COMMENTED OUT unless you need to completely wipe the database again
   //db.execute(`DROP TABLE IF EXISTS master_user;`);
-
+// Add this line inside your initDatabase() function
+db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);');
   db.execute(
     `CREATE TABLE IF NOT EXISTS attendance_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +25,17 @@ export const initDatabase = () => {
     );`
   );
 };
+export function saveLanguageSetting(lang) {
+     db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ("app_lang", ?);', [lang]);
+   }
+
+   export function getLanguageSetting() {
+     const result = db.execute('SELECT value FROM settings WHERE key = "app_lang";');
+     if (result.rows && result.rows.length > 0) {
+       return result.rows.item(0).value;
+     }
+     return 'en'; // Default fallback
+   }
 
 export const saveMasterName = (name, vector) => {
   try {
@@ -100,3 +112,15 @@ export const getAllPendingLogs = () => {
 export const clearSyncedLogs = () => {
   db.execute("DELETE FROM attendance_logs;");
 };
+export function saveThemeSetting(isDark) {
+  // We save it as a string 'true' or 'false'
+  db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ("app_theme", ?);', [isDark ? 'true' : 'false']);
+}
+
+export function getThemeSetting() {
+  const result = db.execute('SELECT value FROM settings WHERE key = "app_theme";');
+  if (result.rows && result.rows.length > 0) {
+    return result.rows.item(0).value === 'true';
+  }
+  return false; // Default to Light mode
+}
