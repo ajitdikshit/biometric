@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   initDatabase, saveOfflineLog, getPendingCount, restoreUserFromCloud, 
   saveMasterName, getAllMasterUsers, saveLanguageSetting, getLanguageSetting,
-  saveThemeSetting, getThemeSetting // 🚨 NEW THEME DB IMPORTS
+  saveThemeSetting, getThemeSetting
 } from './localDB';
 import { registerNetworkSyncMonitor, syncAndPurgeLogs, backupIdentityToCloud, restoreIdentitiesFromCloud } from './sync';
 
@@ -43,12 +43,10 @@ export default function App() {
   
   const [currentTime, setCurrentTime] = useState('');
 
-  // 🚨 NEW FEATURES STATE
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [lang, setLang] = useState('en');
 
-  // 🌐 DYNAMIC TRANSLATIONS
   const t = {
     brand: lang === 'en' ? 'DATALAKE BIOMETRICS' : 'डेटालेक बायोमेट्रिक्स',
     online: lang === 'en' ? 'ONLINE' : 'ऑनलाइन',
@@ -93,7 +91,6 @@ export default function App() {
   useEffect(() => {
     initDatabase();
     
-    // 🚨 LOAD SAVED LANGUAGE & THEME ON STARTUP
     const savedLang = getLanguageSetting();
     if (savedLang) {
       setLang(savedLang);
@@ -223,7 +220,6 @@ export default function App() {
       <SafeAreaView style={[styles.root, isDark && styles.rootDark]} edges={['right', 'bottom', 'left']}>
         <StatusBar hidden={true} />
         
-        {/* TOP BAR WITH MENU ICON */}
         <View style={styles.topbar}>
           <View style={styles.brandContainer}>
             <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.menuIconBox}>
@@ -237,12 +233,11 @@ export default function App() {
           </View>
         </View>
 
-        {/* POLISHED PREMIUM SIDE MENU MODAL */}
         <Modal 
           visible={isMenuVisible} 
           transparent={true} 
           animationType="fade" 
-          statusBarTranslucent={true} // 🚨 Fixes the top edge gap 
+          statusBarTranslucent={true}
           onRequestClose={() => setIsMenuVisible(false)}
         >
           <View style={styles.premiumOverlay}>
@@ -251,7 +246,6 @@ export default function App() {
             <View style={[styles.premiumDrawer, isDark && styles.surfaceDark]}>
               <Text style={[styles.premiumHeader, isDark && styles.textDark]}>SETTINGS</Text>
 
-              {/* Theme Section */}
               <View style={styles.premiumSection}>
                 <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>APP THEME</Text>
                 <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
@@ -260,7 +254,7 @@ export default function App() {
                     style={[styles.segmentButton, !isDark ? styles.segmentActive : styles.segmentInactive]}
                     onPress={() => {
                       setIsDark(false);
-                      saveThemeSetting(false); // 🚨 SAVE TO SQLITE
+                      saveThemeSetting(false);
                     }}
                   >
                     <Text style={[styles.segmentText, !isDark ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>Light</Text>
@@ -270,7 +264,7 @@ export default function App() {
                     style={[styles.segmentButton, isDark ? styles.segmentActiveDark : styles.segmentInactive]}
                     onPress={() => {
                       setIsDark(true);
-                      saveThemeSetting(true); // 🚨 SAVE TO SQLITE
+                      saveThemeSetting(true);
                     }}
                   >
                     <Text style={[styles.segmentText, isDark ? styles.segmentTextActive : styles.segmentTextInactive]}>Dark</Text>
@@ -278,7 +272,6 @@ export default function App() {
                 </View>
               </View>
 
-              {/* Language Section */}
               <View style={styles.premiumSection}>
                 <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>LANGUAGE</Text>
                 <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
@@ -309,7 +302,6 @@ export default function App() {
           </View>
         </Modal>
 
-        {/* CAMERA ZONE */}
         <View style={[styles.camZone, isDark && styles.surfaceDark]}>
           <Text style={[styles.camLabel, isDark && styles.textSubDark]}>{t.faceScan}</Text>
           <View style={styles.camFrameOuter}>
@@ -355,7 +347,6 @@ export default function App() {
           </View>
         </View>
 
-        {/* TELEMETRY ZONE */}
         <View style={[styles.telemetry, isDark && styles.surfaceDark]}>
           <View style={styles.teleHeader}>
             <Text style={[styles.teleTitle, isDark && styles.textSubDark]}>{t.telemetry}</Text>
@@ -390,7 +381,6 @@ export default function App() {
           </View>
         </View>
 
-        {/* ACTION BUTTONS */}
         <View style={styles.actions}>
           <TouchableOpacity style={[styles.btn, styles.btnBlue]} onPress={handleRegisterPress}>
             <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}><Text style={{fontSize: 16}}>👤</Text></View>
@@ -417,12 +407,11 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* ROSTER MODAL */}
         <Modal 
           visible={showRosterModal} 
           animationType="slide" 
           transparent={true} 
-          statusBarTranslucent={true} // 🚨 Fixes the top edge gap 
+          statusBarTranslucent={true}
           onRequestClose={() => setShowRosterModal(false)}
         >
           <View style={styles.modalOverlay}>
@@ -461,7 +450,6 @@ export default function App() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#eaf2ff' },
   
-  // DYNAMIC DARK MODE COLORS
   rootDark: { backgroundColor: '#0f172a' },
   surfaceDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
   cardDark: { backgroundColor: '#0f172a', borderColor: '#334155' },
@@ -471,7 +459,6 @@ const styles = StyleSheet.create({
   inputDark: { backgroundColor: '#334155', color: '#f8fafc', borderColor: '#475569' },
   btnOutlineDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
 
-  // TOP BAR
   topbar: { backgroundColor: '#1a73e8', paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brandContainer: { flexDirection: 'row', alignItems: 'center' },
   menuIconBox: { marginRight: 12, padding: 4 },
@@ -482,7 +469,6 @@ const styles = StyleSheet.create({
   dotOnline: { backgroundColor: '#4ade80' },
   statusText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
 
-  // 💎 NEW PREMIUM DRAWER STYLES 💎
   premiumOverlay: { flex: 1, flexDirection: 'row' },
   premiumOverlayBackground: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
   premiumDrawer: { width: '75%', backgroundColor: '#FFFFFF', height: height, paddingTop: 60, paddingHorizontal: 24, shadowColor: '#000', shadowOffset: { width: -5, height: 0 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 },
@@ -499,7 +485,6 @@ const styles = StyleSheet.create({
   segmentTextActive: { color: '#FFFFFF' },
   segmentTextInactive: { color: '#5F6368' },
 
-  // CAMERA ZONE
   camZone: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   camLabel: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1, alignSelf: 'flex-start', marginBottom: 10 },
   camFrameOuter: { position: 'relative', width: 220, height: 220, marginBottom: 12 },
@@ -520,7 +505,6 @@ const styles = StyleSheet.create({
   promptConfirmBtn: { backgroundColor: '#1a73e8', paddingVertical: 8, paddingHorizontal: 20, borderRadius: 10 },
   promptConfirmBtnText: { color: '#fff', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
 
-  // TELEMETRY ZONE
   telemetry: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 10, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   teleHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   teleTitle: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1 },
@@ -535,7 +519,6 @@ const styles = StyleSheet.create({
   valAmber: { color: '#f59e0b' },
   teleCardSub: { fontSize: 7, color: '#94a3b8', marginTop: 1 },
 
-  // ACTIONS (Added subtle shadows to make them pop)
   actions: { marginHorizontal: 14, marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   btn: { width: '48%', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8, flexDirection: 'column', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3 },
   btnBlue: { backgroundColor: '#1a73e8' },
@@ -546,7 +529,6 @@ const styles = StyleSheet.create({
   btnLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
   btnSub: { fontSize: 9, opacity: 0.7 },
 
-  // MODAL OVERLAY
   modalOverlay: { flex: 1, backgroundColor: 'rgba(11, 27, 58, 0.8)', justifyContent: 'flex-start', alignItems: 'flex-start' },
   modalContent: { width: '85%', height: '60%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#d0e4ff', borderRadius: 16, padding: 20, alignSelf: 'center', marginTop: '30%', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 15 },
   modalTitle: { color: '#1a73e8', fontSize: 16, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginBottom: 20 },

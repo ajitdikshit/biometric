@@ -2,9 +2,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { getPendingCount, getAllPendingLogs, clearSyncedLogs } from './localDB';
 import { SUPABASE_URL, SUPABASE_KEY } from '@env';
 
-// =========================================================================
-// 🚀 SECURE CLOUD INTEGRATION (Env-based)
-// =========================================================================
+
 const INTEGRATION_HEADERS = {
   'Content-Type': 'application/json',
   'apikey': SUPABASE_KEY,

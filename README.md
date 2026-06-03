@@ -1,64 +1,64 @@
-DATALAKE BIOMETRICS: Edge-to-Cloud Identity Verification System
-Project Overview
-Datalake Biometrics is a high-performance, secure biometric authentication terminal designed for decentralized environments. It bridges the gap between local edge computing and cloud-based identity synchronization. By utilizing on-device machine learning for real-time face recognition and blink detection, the system ensures that user identities are verified locally without latency, while maintaining a robust cloud-syncing mechanism for centralized attendance logs and profile management.
-Architecture
-1. Edge Layer (Client-Side)
-The edge layer acts as the primary authentication terminal, operating entirely offline to ensure availability in remote or low-connectivity zones.
-•	Camera Processing: Managed via Android CameraX, optimized for low-latency frame analysis.
-•	Biometric Engine: Implements Google ML Kit for facial landmark extraction and blink detection to prevent spoofing.
-•	Inference Engine: TensorFlow Lite (MobileFaceNet) runs directly on the device, converting facial features into a 192-dimensional vector.
-•	Local Storage: SQLite (powered by react-native-quick-sqlite) stores verified user profiles and pending attendance logs locally to maintain the "offline-first" promise.
-2. Synchronization Layer
-The system employs a dual-sync strategy to ensure data consistency between the edge terminal and the cloud.
-•	Attendance Uplink: Pushes batched logs to the cloud when connectivity is detected, ensuring data integrity without continuous internet dependency.
-•	Identity Roster Bridge: A custom Kotlin-to-React Native bridge that injects cloud-synced user rosters directly into the camera module at runtime, allowing the local terminal to recognize new users registered on other devices.
-3. Cloud Layer (Backend)
-•	Primary Backend: Supabase (PostgreSQL) acts as the source of truth for all registered identity vectors and attendance records.
-•	API/Service: Secure RESTful endpoints handle biometric vector persistence and attendance logging.
-•	Fallback: An integrated Node.js local server serves as an in-memory disaster recovery mechanism, ensuring the system remains operational even if primary cloud services are inaccessible.
-Technology Stack
-Domain	Technology
-Mobile Framework	React Native
-Native Layer	Kotlin (CameraX, TFLite, JNI)
-Machine Learning	TensorFlow Lite, Google ML Kit
-Database (Edge)	SQLite (react-native-quick-sqlite)
-Database (Cloud)	Supabase (PostgreSQL)
-Server/API	Node.js, Express
-Connectivity	NetInfo (Dynamic sync monitoring)
-Key Features
-Robust Liveness Detection
-Unlike standard facial recognition systems that can be bypassed by printed photos, Datalake incorporates an intelligent Blink Detection Engine. By monitoring the spatial delta between eyelid closure and head orientation (Pitch, Yaw, Roll), the system rejects any input that fails to demonstrate natural human 3D movement.
-Offline-First Attendance
-The application queue system ensures that attendance logs are preserved locally during connectivity drops. Once the system detects an internet connection, it utilizes a background sync process to purge logs and update the cloud database without interrupting the user.
-Dynamic Profile Injection
-The system supports cross-terminal recognition. Users can register on one terminal and have their identity propagated to all other nodes in the network via the Cloud-to-Edge synchronization bridge, making it ideal for distributed workforce environments.
-Deployment Instructions
-Prerequisites
-•	Node.js (LTS version)
-•	Android SDK / Gradle 8.x
-•	React Native CLI
-Setup
-1.	Clone the repository:
-Bash
-git clone [repository-url]
-2.	Configure Environment:
-Create a .env file in the root directory:
-Code snippet
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-3.	Install Dependencies:
-Bash
-npm install
-4.	Build Native Modules:
-Bash
-cd android
-./gradlew assembleRelease
-Security Considerations
-•	Vector Normalization: All biometric vectors are normalized using L2-norm to ensure consistent matching regardless of lighting or angle variations.
-•	Data Minimization: Biometric data is stored as mathematical embeddings (vectors) rather than raw images, significantly reducing the impact of a potential data breach.
-•	Encapsulation: The identity roster bridge is restricted to authenticated sessions, preventing unauthorized tampering with the biometric database.
-Future Roadmap
-•	Multi-Modal Authentication: Integration of voice print verification to enhance the security layer.
-•	Real-time Analytics Dashboard: Development of a web-based portal to visualize attendance trends and terminal health in real-time.
-•	Advanced Encryption: Moving towards end-to-end encryption for all vector data transmitted between edge terminals and the cloud.
+Datalake Biometrics is an offline-first, edge facial recognition terminal. Built with React Native and a custom Kotlin ML bridge, it processes identities locally via TFLite and SQLite for zero-latency authentication. It seamlessly background-syncs encrypted attendance logs with a Supabase PostgreSQL cloud when connectivity returns.
+# 👁️ Datalake Biometrics: Edge-First Identity Vault
 
+[![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
+[![Kotlin](https://img.shields.io/badge/kotlin-%237F52FF.svg?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org/index.html)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+
+Traditional cloud-dependent biometric systems suffer from latency, privacy risks, and complete failure in low-connectivity environments like remote field sites or factory floors. 
+
+**Datalake Biometrics** is an offline-first, edge-computing facial recognition terminal built to solve this. It processes identities entirely on-device, ensuring zero-latency authentication, operational resilience, and maximum data privacy.
+
+---
+
+## 🚀 Quick Start: Try the App
+
+Due to platform submission limits (25MB), the `node_modules` and heavy Android build artifacts have been omitted from this repository source code. 
+
+**To test the application immediately without compiling from source, please download the pre-built Release APK:**
+
+👉 **[DOWNLOAD RELEASE APK HERE](https://drive.google.com/file/d/1hL63qOWkgG1id701HBO3W6rLCQcCCygs/view?usp=drive_link)**
+
+*Note: Ensure "Install from Unknown Sources" is enabled on your Android device to test the APK.*
+
+---
+
+## ✨ Key Features
+
+* **⚡ Zero-Latency Verification:** Authenticates identities in milliseconds against a local SQLite vault. Requires **zero** active internet connection to function.
+* **🧠 Custom Kotlin ML Bridge:** A high-performance bridge between Android's CameraX and React Native prevents frame drops and UI thread blocking during active ML inference.
+* **🔄 Offline-First Sync Engine:** Automatically pushes encrypted attendance logs and fetches new master identities whenever a network is detected in the background.
+* **💻 Enterprise Telemetry UI:** A floating terminal interface providing real-time liveness detection, network state, and system logs.
+* **⚙️ Hardware Kiosk Ready:** Includes bilingual support (English/Hindi) and an SQLite-persisted Dark/Light theme tailored for dedicated hardware deployments.
+
+---
+
+## 🛠️ Technical Architecture
+
+Instead of transmitting raw images to a vulnerable cloud server, our custom Kotlin native module leverages a lightweight (4MB) **MobileFaceNet TFLite** model to generate encrypted mathematical face vectors. 
+
+These vectors are securely persisted in a local **SQLite** database. When network connectivity is restored, a background worker seamlessly syncs attendance logs and roster updates with a **Supabase PostgreSQL** backend without interrupting the active camera feed.
+
+* **Frontend:** React Native (TypeScript/JavaScript)
+* **Native ML Layer:** Kotlin, Android CameraX, TensorFlow Lite
+* **Edge Storage:** `react-native-quick-sqlite`
+* **Cloud Infrastructure:** Supabase (PostgreSQL)
+
+---
+
+## 💻 Local Development & Installation
+
+If you wish to build the project from the source code, follow these steps:
+
+### 1. Prerequisites
+* **Node.js** (v18 or newer)
+* **Android Studio** & Android SDK (Ensure NDK and CMake are installed for the native Kotlin bridge)
+* **React Native CLI**
+* A physical Android device connected via USB (with USB Debugging enabled) or an Emulator with camera support.
+
+### 2. Clone & Install Dependencies
+```bash
+git clone [https://github.com/ajitdikshit/biometric.git](https://github.com/ajitdikshit/biometric.git)
+cd biometric
+npm install

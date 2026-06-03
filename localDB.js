@@ -3,10 +3,8 @@ import { open } from 'react-native-quick-sqlite';
 const db = open({ name: 'datalake_logs.sqlite' });
 
 export const initDatabase = () => {
-  // KEEP THIS COMMENTED OUT unless you need to completely wipe the database again
-  //db.execute(`DROP TABLE IF EXISTS master_user;`);
-// Add this line inside your initDatabase() function
-db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);');
+  db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);');
+  
   db.execute(
     `CREATE TABLE IF NOT EXISTS attendance_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,17 +23,18 @@ db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEX
     );`
   );
 };
-export function saveLanguageSetting(lang) {
-     db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ("app_lang", ?);', [lang]);
-   }
 
-   export function getLanguageSetting() {
-     const result = db.execute('SELECT value FROM settings WHERE key = "app_lang";');
-     if (result.rows && result.rows.length > 0) {
-       return result.rows.item(0).value;
-     }
-     return 'en'; // Default fallback
-   }
+export function saveLanguageSetting(lang) {
+  db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ("app_lang", ?);', [lang]);
+}
+
+export function getLanguageSetting() {
+  const result = db.execute('SELECT value FROM settings WHERE key = "app_lang";');
+  if (result.rows && result.rows.length > 0) {
+    return result.rows.item(0).value;
+  }
+  return 'en';
+}
 
 export const saveMasterName = (name, vector) => {
   try {
@@ -43,7 +42,6 @@ export const saveMasterName = (name, vector) => {
     const existingCount = check.rows?.item ? check.rows.item(0).count : (check.rows[0]?.count || 0);
 
     if (existingCount === 0) {
-      // Safely stringify the math array to prevent SQLite crashes
       const vectorString = vector ? JSON.stringify(vector) : "[]";
       db.execute("INSERT INTO master_user (name, face_vector) VALUES (?, ?);", [name, vectorString]);
     }
@@ -58,7 +56,6 @@ export const restoreUserFromCloud = (name, vectorString) => {
     const existingCount = check.rows?.item ? check.rows.item(0).count : (check.rows[0]?.count || 0);
 
     if (existingCount === 0) {
-      // Ensure we never insert undefined values from Supabase
       const safeVector = vectorString ? vectorString : "[]";
       db.execute("INSERT INTO master_user (name, face_vector) VALUES (?, ?);", [name, safeVector]);
     }
@@ -69,7 +66,6 @@ export const restoreUserFromCloud = (name, vectorString) => {
 
 export const getAllMasterUsers = () => {
   try {
-    // 🚨 UPGRADE: Now selects 'face_vector' so you can audit the raw math if judges ask
     const result = db.execute("SELECT id, name, face_vector FROM master_user;");
     let users = [];
     if (result.rows) {
@@ -112,8 +108,8 @@ export const getAllPendingLogs = () => {
 export const clearSyncedLogs = () => {
   db.execute("DELETE FROM attendance_logs;");
 };
+
 export function saveThemeSetting(isDark) {
-  // We save it as a string 'true' or 'false'
   db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES ("app_theme", ?);', [isDark ? 'true' : 'false']);
 }
 
@@ -122,5 +118,5 @@ export function getThemeSetting() {
   if (result.rows && result.rows.length > 0) {
     return result.rows.item(0).value === 'true';
   }
-  return false; // Default to Light mode
+  return false;
 }
