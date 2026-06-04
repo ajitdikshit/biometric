@@ -3,16 +3,17 @@ import {
   StyleSheet, View, Text, PermissionsAndroid, 
   requireNativeComponent, TouchableOpacity, TextInput, 
   ViewProps, Keyboard, TouchableWithoutFeedback, Modal, FlatList,
-  StatusBar, Dimensions
+  StatusBar, Dimensions, Alert, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { 
   initDatabase, saveOfflineLog, getPendingCount, restoreUserFromCloud, 
   saveMasterName, getAllMasterUsers, saveLanguageSetting, getLanguageSetting,
-  saveThemeSetting, getThemeSetting
+  saveThemeSetting, getThemeSetting, clearSyncedLogs
 } from './localDB';
-import { registerNetworkSyncMonitor, syncAndPurgeLogs, backupIdentityToCloud, restoreIdentitiesFromCloud } from './sync';
+
+import { registerNetworkSyncMonitor, syncAndPurgeLogs, backupIdentityToCloud, restoreIdentitiesFromCloud, fetchAllCloudLogs } from './sync';
 
 interface LiveBiometricViewProps extends ViewProps {
   mode: string;
@@ -24,7 +25,11 @@ const LiveBiometricView = requireNativeComponent<LiveBiometricViewProps>('LiveBi
 
 const { height } = Dimensions.get('window');
 
+const NHAI_LOGO_URI = require('./assets/nhai-logo-hd.png');
+
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   const [pendingLogs, setPendingLogs] = useState(0);
   const [isOnline, setIsOnline] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -37,6 +42,12 @@ export default function App() {
   const [showRosterModal, setShowRosterModal] = useState(false);
   const [localUsers, setLocalUsers] = useState<any[]>([]);
 
+  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [localLogs, setLocalLogs] = useState<any[]>([]);
+  const [isFetchingLogs, setIsFetchingLogs] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+
   const [attendanceLog, setAttendanceLog] = useState('');
   const [registrationLog, setRegistrationLog] = useState('');
   const [systemLog, setSystemLog] = useState('');
@@ -48,26 +59,30 @@ export default function App() {
   const [lang, setLang] = useState('en');
 
   const t = {
-    brand: lang === 'en' ? 'DATALAKE BIOMETRICS' : 'डेटालेक बायोमेट्रिक्स',
+    brand: lang === 'en' ? 'NHAI BIOMETRICS' : 'एनएचएआई बायोमेट्रिक्स',
     online: lang === 'en' ? 'ONLINE' : 'ऑनलाइन',
     offline: lang === 'en' ? 'OFFLINE' : 'ऑफ़लाइन',
-    faceScan: lang === 'en' ? 'FACE SCAN' : 'चेहरा स्कैन',
-    standby: lang === 'en' ? 'STANDBY' : 'स्टैंडबाय',
-    helper: lang === 'en' ? 'Align face inside frame • Hold steady' : 'चेहरे को फ्रेम में रखें • स्थिर रहें',
-    telemetry: lang === 'en' ? 'LIVE TELEMETRY' : 'लाइव टेलीमेट्री',
+    faceScan: lang === 'en' ? 'IDENTITY VERIFICATION SCANNER' : 'पहचान सत्यापन स्कैनर',
+    standby: lang === 'en' ? 'SYSTEM STANDBY' : 'सिस्टम स्टैंडबाय',
+    helper: lang === 'en' ? 'POSITION FACE WITHIN BOUNDARY' : 'चेहरे को सीमा के भीतर रखें',
+    telemetry: lang === 'en' ? 'SYSTEM TELEMETRY LOGS' : 'सिस्टम टेलीमेट्री लॉग',
     attendance: lang === 'en' ? 'ATTENDANCE' : 'उपस्थिति',
     enrollment: lang === 'en' ? 'ENROLLMENT' : 'पंजीकरण',
-    system: lang === 'en' ? 'SYSTEM' : 'सिस्टम',
+    system: lang === 'en' ? 'NETWORK' : 'नेटवर्क',
     liveness: lang === 'en' ? 'LIVENESS' : 'सजीवता',
-    regBtn: lang === 'en' ? 'Register User' : 'उपयोगकर्ता बनाएं',
-    regSub: lang === 'en' ? 'Enroll new face' : 'नया चेहरा जोड़ें',
-    logBtn: lang === 'en' ? 'Login' : 'लॉग इन',
-    logSub: lang === 'en' ? 'Verify identity' : 'पहचान सत्यापित करें',
-    viewBtn: lang === 'en' ? 'View Users' : 'सूची देखें',
-    viewSub: lang === 'en' ? 'Manage roster' : 'उपयोगकर्ता प्रबंधित करें',
-    syncBtn: lang === 'en' ? 'Fetch Database' : 'डेटाबेस सिंक',
-    syncSub: lang === 'en' ? 'Sync records' : 'रिकॉर्ड अपडेट करें',
+    regBtn: lang === 'en' ? 'REGISTER NEW USER' : 'नया उपयोगकर्ता बनाएं',
+    logBtn: lang === 'en' ? 'VERIFY IDENTITY' : 'पहचान सत्यापित करें',
+    viewBtn: lang === 'en' ? 'VIEW LOCAL ROSTER' : 'स्थानीय रोस्टर देखें',
+    syncBtn: lang === 'en' ? 'FETCH CLOUD DB' : 'क्लाउड डेटाबेस सिंक',
+    viewLogsBtn: lang === 'en' ? 'VIEW ATTENDANCE REGISTRY' : 'उपस्थिति रजिस्टर देखें',
+    clearLogsBtn: lang === 'en' ? 'PURGE LOCAL LOGS' : 'स्थानीय लॉग मिटाएं',
+    showAll: lang === 'en' ? 'VIEW ALL DATES' : 'सभी तिथियां देखें',
   };
+
+  const monthNamesEn = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+  const monthNamesHi = ["जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
+  const weekDaysEn = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const weekDaysHi = ["रवि", "सोम", "मंगल", "बुध", "गुरु", "शुक्र", "शनि"];
 
   const syncLocalRosterToEdge = () => {
     const users = getAllMasterUsers();
@@ -89,6 +104,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    const splashTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+
     initDatabase();
     
     const savedLang = getLanguageSetting();
@@ -111,6 +130,7 @@ export default function App() {
     }, 1000);
 
     return () => {
+      clearTimeout(splashTimer);
       unsubscribeNetwork();
       clearInterval(timer);
     };
@@ -120,10 +140,10 @@ export default function App() {
     try {
       const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
       if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        setSystemLog('CAMERA REQUIRED: Please grant permissions.');
+        setSystemLog('PERMISSION DENIED: CAMERA');
       }
     } catch (err) {
-      setSystemLog('CAMERA ERROR: Activity not ready.');
+      setSystemLog('CAMERA ERROR: MODULE UNAVAILABLE');
     }
   };
 
@@ -136,21 +156,21 @@ export default function App() {
 
   const confirmRegistrationIntent = () => {
     if (nameInput.trim().length === 0) {
-      setRegistrationLog('REQUIRED: Enter a name.');
+      setRegistrationLog('ERROR: IDENTITY REQUIRED');
       return;
     }
     Keyboard.dismiss();
     setActiveRegisterName(nameInput.trim());
     setIsPromptingName(false);
     setCameraActive(true);
-    setRegistrationLog(`Awaiting scan: ${nameInput.trim()}`);
+    setRegistrationLog(`AWAITING SCAN: ${nameInput.trim()}`);
   };
 
   const startVerificationProcess = () => {
     setIsPromptingName(false);
     setCurrentMode('VERIFY');
     setCameraActive(true);
-    setAttendanceLog('Awaiting face scan...');
+    setAttendanceLog('AWAITING BIOMETRIC INPUT...');
   };
 
   const handleOpenRoster = () => {
@@ -159,8 +179,69 @@ export default function App() {
     setShowRosterModal(true);
   };
 
+  const handleOpenLogs = async () => {
+    setIsMenuVisible(false);
+    setShowLogsModal(true);
+    setIsFetchingLogs(true); 
+    setSelectedDate(null);
+    setCurrentMonthDate(new Date());
+
+    if (!isOnline) {
+      setSystemLog('NETWORK ERROR: CLOUD UNREACHABLE.');
+      setIsFetchingLogs(false);
+      setLocalLogs([]);
+      return;
+    }
+
+    const cloudLogs = await fetchAllCloudLogs(setSystemLog);
+    setLocalLogs(cloudLogs);
+    setIsFetchingLogs(false); 
+  };
+
+  const handleClearLogs = () => {
+    Alert.alert(
+      lang === 'en' ? 'AUTHORIZATION REQUIRED' : 'प्राधिकरण आवश्यक है',
+      lang === 'en' ? 'Confirm permanent deletion of local system logs?' : 'क्या आप सिस्टम लॉग को स्थायी रूप से हटाने की पुष्टि करते हैं?',
+      [
+        { text: lang === 'en' ? 'CANCEL' : 'रद्द करें', style: 'cancel' },
+        {
+          text: lang === 'en' ? 'CONFIRM PURGE' : 'मिटाएं',
+          style: 'destructive',
+          onPress: () => {
+            clearSyncedLogs();
+            setPendingLogs(getPendingCount());
+            setSystemLog(lang === 'en' ? 'LOCAL LOGS PURGED.' : 'स्थानीय लॉग हटा दिए गए।');
+            setIsMenuVisible(false);
+          }
+        }
+      ]
+    );
+  };
+
+  const changeMonth = (direction: number) => {
+    const nextMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + direction, 1);
+    setCurrentMonthDate(nextMonth);
+  };
+
+  const generateCalendarDays = () => {
+    const year = currentMonthDate.getFullYear();
+    const month = currentMonthDate.getMonth();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const startDay = new Date(year, month, 1).getDay();
+    
+    const days = [];
+    for (let i = 0; i < startDay; i++) {
+      days.push({ id: `empty-${i}`, day: null, fullDate: null });
+    }
+    for (let d = 1; d <= totalDays; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      days.push({ id: `day-${d}`, day: d, fullDate: dateStr });
+    }
+    return days;
+  };
+
   const executeCloudToEdgeSync = async () => {
-    setSystemLog("Fetching identities from Supabase...");
+    setSystemLog("FETCHING CLOUD ROSTER...");
     const roster = await restoreIdentitiesFromCloud(restoreUserFromCloud, setSystemLog);
     
     if (roster && roster.length > 0) {
@@ -186,7 +267,7 @@ export default function App() {
       if (currentMode === 'VERIFY') {
         saveOfflineLog(matchedName || 'Unknown_User');
         setPendingLogs(getPendingCount());
-        setAttendanceLog(`Welcome ${matchedName}`);
+        setAttendanceLog(`VERIFIED: ${matchedName}`);
         
         if (isOnline) {
           syncAndPurgeLogs(setPendingLogs, setSystemLog);
@@ -199,7 +280,7 @@ export default function App() {
         }
 
         if (finalVector && finalVector.length > 0) {
-          setRegistrationLog(`Registered ${matchedName} successfully`);
+          setRegistrationLog(`ENROLLMENT SUCCESS: ${matchedName}`);
           saveMasterName(matchedName, finalVector);
           syncLocalRosterToEdge();
           
@@ -207,32 +288,65 @@ export default function App() {
             backupIdentityToCloud(matchedName, finalVector, setSystemLog);
           }
         } else {
-          setSystemLog(`KOTLIN LOCKED: Vault refused array.`);
+          setSystemLog(`VAULT ERROR: INVALID VECTOR DATA`);
         }
       }
     } else {
-      setSystemLog(`${message}`);
+      setSystemLog(`${message.toUpperCase()}`);
     }
   };
 
+  const filteredLogs = selectedDate 
+    ? localLogs.filter(log => log.log_date === selectedDate)
+    : localLogs;
+
+  if (showSplash) {
+    return (
+      <SafeAreaView style={styles.splashRoot}>
+        <StatusBar hidden={false} backgroundColor="#E8F1F8" barStyle="dark-content" />
+        <View style={styles.splashContainer}>
+          <Image 
+  source={require('./assets/nhai-logo-hd.png')} 
+  style={styles.splashLogo} 
+  resizeMode="contain" 
+/>
+          <Text style={styles.splashTitle}>NATIONAL HIGHWAYS AUTHORITY OF INDIA</Text>
+          <Text style={styles.splashSubtitle}>BIOMETRIC ATTENDANCE PORTAL</Text>
+          <Text style={styles.splashFooter}>GOVERNMENT OF INDIA</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <SafeAreaView style={[styles.root, isDark && styles.rootDark]} edges={['right', 'bottom', 'left']}>
-        <StatusBar hidden={true} />
+      <SafeAreaView style={[styles.root, isDark && styles.rootDark]}>
         
+        <StatusBar 
+          hidden={false} 
+          backgroundColor={isDark ? '#121212' : '#1A5F9A'} 
+          barStyle="light-content" 
+        />
+        
+        {/* TOP NAV BAR */}
         <View style={styles.topbar}>
           <View style={styles.brandContainer}>
             <TouchableOpacity onPress={() => setIsMenuVisible(true)} style={styles.menuIconBox}>
               <Text style={styles.menuIcon}>☰</Text>
             </TouchableOpacity>
+            <Image 
+  source={require('./assets/nhai-logo-hd.png')} 
+  style={styles.navLogo} 
+  resizeMode="contain" 
+/>
             <Text style={styles.brand}>{t.brand}</Text>
           </View>
-          <View style={styles.statusPill}>
-            <View style={[styles.dot, isOnline && styles.dotOnline]} />
+          <View style={[styles.statusBox, isOnline ? styles.statusBoxOnline : styles.statusBoxOffline]}>
             <Text style={styles.statusText}>{isOnline ? t.online : t.offline}</Text>
           </View>
         </View>
 
+        {/* SETTINGS DRAWER */}
         <Modal 
           visible={isMenuVisible} 
           transparent={true} 
@@ -240,87 +354,86 @@ export default function App() {
           statusBarTranslucent={true}
           onRequestClose={() => setIsMenuVisible(false)}
         >
-          <View style={styles.premiumOverlay}>
-            <TouchableOpacity style={styles.premiumOverlayBackground} activeOpacity={1} onPress={() => setIsMenuVisible(false)} />
+          <View style={styles.drawerOverlay}>
+            <TouchableOpacity style={styles.drawerBackground} activeOpacity={1} onPress={() => setIsMenuVisible(false)} />
             
-            <View style={[styles.premiumDrawer, isDark && styles.surfaceDark]}>
-              <Text style={[styles.premiumHeader, isDark && styles.textDark]}>SETTINGS</Text>
+            <View style={[styles.drawerPanel, isDark && styles.surfaceDark]}>
+              <Text style={[styles.drawerHeader, isDark && styles.textDark]}>SYSTEM CONFIGURATION</Text>
 
-              <View style={styles.premiumSection}>
-                <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>APP THEME</Text>
-                <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
+              <View style={styles.drawerSection}>
+                <Text style={[styles.drawerSectionTitle, isDark && styles.textDark]}>INTERFACE THEME</Text>
+                <View style={styles.radioGroup}>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    style={[styles.segmentButton, !isDark ? styles.segmentActive : styles.segmentInactive]}
-                    onPress={() => {
-                      setIsDark(false);
-                      saveThemeSetting(false);
-                    }}
+                    style={[styles.radioBtn, !isDark ? styles.radioBtnActive : styles.radioBtnInactive]}
+                    onPress={() => { setIsDark(false); saveThemeSetting(false); }}
                   >
-                    <Text style={[styles.segmentText, !isDark ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>Light</Text>
+                    <Text style={[styles.radioText, !isDark ? styles.radioTextActive : styles.radioTextInactive]}>LIGHT</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    style={[styles.segmentButton, isDark ? styles.segmentActiveDark : styles.segmentInactive]}
-                    onPress={() => {
-                      setIsDark(true);
-                      saveThemeSetting(true);
-                    }}
+                    style={[styles.radioBtn, isDark ? styles.radioBtnActive : styles.radioBtnInactive]}
+                    onPress={() => { setIsDark(true); saveThemeSetting(true); }}
                   >
-                    <Text style={[styles.segmentText, isDark ? styles.segmentTextActive : styles.segmentTextInactive]}>Dark</Text>
+                    <Text style={[styles.radioText, isDark ? styles.radioTextActive : styles.radioTextInactive]}>DARK</Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <View style={styles.premiumSection}>
-                <Text style={[styles.premiumSectionTitle, isDark && styles.textSubDark]}>LANGUAGE</Text>
-                <View style={[styles.segmentContainer, isDark && styles.segmentContainerDark]}>
+              <View style={styles.drawerSection}>
+                <Text style={[styles.drawerSectionTitle, isDark && styles.textDark]}>SYSTEM LANGUAGE</Text>
+                <View style={styles.radioGroup}>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    style={[styles.segmentButton, lang === 'en' ? (isDark ? styles.segmentActiveDark : styles.segmentActive) : styles.segmentInactive]}
-                    onPress={() => {
-                      setLang('en');
-                      saveLanguageSetting('en'); 
-                    }}
+                    style={[styles.radioBtn, lang === 'en' ? styles.radioBtnActive : styles.radioBtnInactive]}
+                    onPress={() => { setLang('en'); saveLanguageSetting('en'); }}
                   >
-                    <Text style={[styles.segmentText, lang === 'en' ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>English</Text>
+                    <Text style={[styles.radioText, lang === 'en' ? styles.radioTextActive : styles.radioTextInactive]}>ENGLISH</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    style={[styles.segmentButton, lang === 'hi' ? (isDark ? styles.segmentActiveDark : styles.segmentActive) : styles.segmentInactive]}
-                    onPress={() => {
-                      setLang('hi');
-                      saveLanguageSetting('hi'); 
-                    }}
+                    style={[styles.radioBtn, lang === 'hi' ? styles.radioBtnActive : styles.radioBtnInactive]}
+                    onPress={() => { setLang('hi'); saveLanguageSetting('hi'); }}
                   >
-                    <Text style={[styles.segmentText, lang === 'hi' ? styles.segmentTextActive : (isDark ? styles.textSubDark : styles.segmentTextInactive)]}>हिंदी</Text>
+                    <Text style={[styles.radioText, lang === 'hi' ? styles.radioTextActive : styles.radioTextInactive]}>हिंदी</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+
+              <View style={styles.drawerSection}>
+                <Text style={[styles.drawerSectionTitle, isDark && styles.textDark]}>DATABASE CONTROLS</Text>
+                <TouchableOpacity style={styles.actionBtn} onPress={handleOpenLogs}>
+                  <Text style={styles.actionBtnText}>{t.viewLogsBtn}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={handleClearLogs}>
+                  <Text style={[styles.actionBtnText, {color: '#FFFFFF'}]}>{t.clearLogsBtn}</Text>
+                </TouchableOpacity>
               </View>
 
             </View>
           </View>
         </Modal>
 
-        <View style={[styles.camZone, isDark && styles.surfaceDark]}>
-          <Text style={[styles.camLabel, isDark && styles.textSubDark]}>{t.faceScan}</Text>
-          <View style={styles.camFrameOuter}>
+        {/* CAMERA VIEWPORT */}
+        <View style={[styles.panel, isDark && styles.panelDark]}>
+          <Text style={[styles.panelTitle, isDark && styles.textDark]}>{t.faceScan}</Text>
+          <View style={styles.camContainer}>
             <View style={[styles.camFrame, isDark && styles.camFrameDark]}>
               
               {isPromptingName ? (
-                <View style={styles.promptContainer}>
-                  <Text style={styles.promptTitle}>ENTER IDENTITY</Text>
+                <View style={styles.promptBox}>
+                  <Text style={styles.promptTitle}>ENTER OFFICIAL ID / NAME</Text>
                   <TextInput 
-                    style={[styles.inputField, isDark && styles.inputDark]}
+                    style={[styles.inputBox, isDark && styles.inputDark]}
                     placeholder="e.g. Ajit Dikshit"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="#7A93AA"
                     value={nameInput}
                     onChangeText={setNameInput}
                     autoFocus={true}
-                    maxLength={25}
+                    maxLength={30}
                   />
-                  <TouchableOpacity style={styles.promptConfirmBtn} onPress={confirmRegistrationIntent}>
-                    <Text style={styles.promptConfirmBtnText}>SCAN</Text>
+                  <TouchableOpacity style={styles.confirmBtn} onPress={confirmRegistrationIntent}>
+                    <Text style={styles.confirmBtnText}>INITIATE SCAN</Text>
                   </TouchableOpacity>
                 </View>
               ) : cameraActive ? (
@@ -336,107 +449,200 @@ export default function App() {
               )}
 
             </View>
-            <View style={[styles.corner, styles.tl]} />
-            <View style={[styles.corner, styles.tr]} />
-            <View style={[styles.corner, styles.bl]} />
-            <View style={[styles.corner, styles.br]} />
           </View>
           <View style={styles.helperRow}>
-            <View style={styles.helperDot} />
-            <Text style={[styles.helperText, isDark && styles.textSubDark]}>{t.helper}</Text>
+            <Text style={[styles.helperText, isDark && styles.textDark]}>{t.helper}</Text>
           </View>
         </View>
 
-        <View style={[styles.telemetry, isDark && styles.surfaceDark]}>
+        {/* TELEMETRY DATA GRID */}
+        <View style={[styles.panel, isDark && styles.panelDark, {marginTop: 12}]}>
           <View style={styles.teleHeader}>
-            <Text style={[styles.teleTitle, isDark && styles.textSubDark]}>{t.telemetry}</Text>
-            <Text style={styles.teleTimestamp}>{currentTime}</Text>
+            <Text style={[styles.panelTitle, isDark && styles.textDark, {marginBottom: 0, borderBottomWidth: 0}]}>{t.telemetry}</Text>
+            <Text style={[styles.teleTime, isDark && styles.textDark]}>{currentTime}</Text>
           </View>
-          <View style={styles.teleGrid}>
+          <View style={styles.dataGrid}>
             
-            <View style={[styles.teleCard, isDark && styles.cardDark]}>
-              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.attendance}</Text>
-              <Text style={[styles.teleCardValue, styles.valBlue]} numberOfLines={1}>{attendanceLog || 'Awaiting Scan'}</Text>
-              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Scans logged locally</Text>
+            <View style={[styles.dataCell, isDark && styles.dataCellDark]}>
+              <Text style={[styles.dataLabel, isDark && styles.textDark]}>{t.attendance}</Text>
+              <Text style={styles.dataValue} numberOfLines={1}>{attendanceLog || 'WAITING...'}</Text>
             </View>
 
-            <View style={[styles.teleCard, isDark && styles.cardDark]}>
-              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.enrollment}</Text>
-              <Text style={[styles.teleCardValue, styles.valTeal]} numberOfLines={1}>{registrationLog || 'Idle'}</Text>
-              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Ready for capture</Text>
+            <View style={[styles.dataCell, isDark && styles.dataCellDark]}>
+              <Text style={[styles.dataLabel, isDark && styles.textDark]}>{t.enrollment}</Text>
+              <Text style={styles.dataValue} numberOfLines={1}>{registrationLog || 'IDLE'}</Text>
             </View>
 
-            <View style={[styles.teleCard, isDark && styles.cardDark]}>
-              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.system}</Text>
-              <Text style={[styles.teleCardValue, styles.valGreen]} numberOfLines={1}>{isOnline ? 'Stable' : 'Sync Pending'}</Text>
-              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>{isOnline ? 'All checks pass' : `Pending Logs: ${pendingLogs}`}</Text>
+            <View style={[styles.dataCell, isDark && styles.dataCellDark]}>
+              <Text style={[styles.dataLabel, isDark && styles.textDark]}>{t.system}</Text>
+              <Text style={styles.dataValue} numberOfLines={1}>{isOnline ? 'CONNECTED' : 'DISCONNECTED'}</Text>
             </View>
 
-            <View style={[styles.teleCard, isDark && styles.cardDark]}>
-              <Text style={[styles.teleCardLabel, isDark && styles.textSubDark]}>{t.liveness}</Text>
-              <Text style={[styles.teleCardValue, styles.valAmber]} numberOfLines={1}>{systemLog || 'Checking...'}</Text>
-              <Text style={[styles.teleCardSub, isDark && styles.textSubDark]}>Anti-spoof active</Text>
+            <View style={[styles.dataCell, isDark && styles.dataCellDark]}>
+              <Text style={[styles.dataLabel, isDark && styles.textDark]}>{t.liveness}</Text>
+              <Text style={styles.dataValue} numberOfLines={1}>{systemLog || 'INITIALIZING...'}</Text>
             </View>
 
           </View>
         </View>
 
-        <View style={styles.actions}>
-          <TouchableOpacity style={[styles.btn, styles.btnBlue]} onPress={handleRegisterPress}>
-            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}><Text style={{fontSize: 16}}>👤</Text></View>
-            <Text style={[styles.btnLabel, { color: '#fff' }]}>{t.regBtn}</Text>
-            <Text style={[styles.btnSub, { color: '#fff' }]}>{t.regSub}</Text>
+        {/* COMMAND BUTTONS */}
+        <View style={styles.commandGrid}>
+          <TouchableOpacity style={styles.cmdBtnSolid} onPress={handleRegisterPress}>
+            <Text style={styles.cmdBtnText}>{t.regBtn}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.btn, styles.btnTeal]} onPress={startVerificationProcess}>
-            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.3)' }]}><Text style={{fontSize: 16}}>🔓</Text></View>
-            <Text style={[styles.btnLabel, { color: '#003d45' }]}>{t.logBtn}</Text>
-            <Text style={[styles.btnSub, { color: '#003d45' }]}>{t.logSub}</Text>
+          <TouchableOpacity style={styles.cmdBtnSolid} onPress={startVerificationProcess}>
+            <Text style={styles.cmdBtnText}>{t.logBtn}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.btn, styles.btnOutline, isDark && styles.btnOutlineDark]} onPress={handleOpenRoster}>
-            <View style={[styles.btnIcon, { backgroundColor: isDark ? '#1a73e8' : '#eaf2ff' }]}><Text style={{fontSize: 16}}>👥</Text></View>
-            <Text style={[styles.btnLabel, { color: isDark ? '#fff' : '#1a73e8' }]}>{t.viewBtn}</Text>
-            <Text style={[styles.btnSub, { color: isDark ? '#fff' : '#1a73e8' }]}>{t.viewSub}</Text>
+          <TouchableOpacity style={[styles.cmdBtnOutline, isDark && styles.cmdBtnOutlineDark]} onPress={handleOpenRoster}>
+            <Text style={[styles.cmdBtnTextOutline, isDark && styles.textDark]}>{t.viewBtn}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.btn, styles.btnDark]} onPress={executeCloudToEdgeSync}>
-            <View style={[styles.btnIcon, { backgroundColor: 'rgba(255, 255, 255, 0.12)' }]}><Text style={{fontSize: 16}}>🗄️</Text></View>
-            <Text style={[styles.btnLabel, { color: '#fff' }]}>{t.syncBtn}</Text>
-            <Text style={[styles.btnSub, { color: '#fff' }]}>{t.syncSub}</Text>
+          <TouchableOpacity style={[styles.cmdBtnOutline, isDark && styles.cmdBtnOutlineDark]} onPress={executeCloudToEdgeSync}>
+            <Text style={[styles.cmdBtnTextOutline, isDark && styles.textDark]}>{t.syncBtn}</Text>
           </TouchableOpacity>
         </View>
 
+        {/* ROSTER MODAL */}
         <Modal 
           visible={showRosterModal} 
-          animationType="slide" 
+          animationType="fade" 
           transparent={true} 
           statusBarTranslucent={true}
           onRequestClose={() => setShowRosterModal(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, isDark && styles.surfaceDark]}>
-              <Text style={styles.modalTitle}>LOCAL ROSTER</Text>
-              <View style={[styles.tableHeader, isDark && {borderBottomColor: '#334155'}]}>
-                <Text style={[styles.tableHeaderText, {flex: 0.3}]}>ID</Text>
-                <Text style={[styles.tableHeaderText, {flex: 0.7}]}>NAME</Text>
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalBox, isDark && styles.modalBoxDark]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalHeaderText}>LOCAL IDENTITY ROSTER</Text>
+              </View>
+              <View style={[styles.tableRowHeader, isDark && styles.tableRowDark]}>
+                <Text style={[styles.thText, {flex: 0.3}]}>ID NO.</Text>
+                <Text style={[styles.thText, {flex: 0.7}]}>FULL NAME</Text>
               </View>
               {localUsers.length === 0 ? (
-                <Text style={styles.emptyText}>No identities found.</Text>
+                <Text style={[styles.emptyStateText, isDark && styles.textDark]}>NO RECORDS FOUND</Text>
               ) : (
                 <FlatList 
                   data={localUsers}
                   keyExtractor={(item) => item.id.toString()}
                   renderItem={({item}) => (
-                    <View style={[styles.tableRow, isDark && {borderBottomColor: '#1e293b'}]}>
-                      <Text style={[styles.tableCellText, isDark && styles.textDark, {flex: 0.3}]}>{item.id}</Text>
-                      <Text style={[styles.tableCellText, isDark && styles.textDark, {flex: 0.7}]}>{item.name}</Text>
+                    <View style={[styles.tableRow, isDark && styles.tableRowDark]}>
+                      <Text style={[styles.tdText, isDark && styles.textDark, {flex: 0.3}]}>{item.id}</Text>
+                      <Text style={[styles.tdText, isDark && styles.textDark, {flex: 0.7}]}>{item.name.toUpperCase()}</Text>
                     </View>
                   )}
                 />
               )}
-              <TouchableOpacity style={[styles.closeModalBtn, isDark && {backgroundColor: '#1e293b', borderColor: '#334155'}]} onPress={() => setShowRosterModal(false)}>
-                <Text style={styles.closeModalBtnText}>CLOSE CONSOLE</Text>
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowRosterModal(false)}>
+                <Text style={styles.modalCloseText}>CLOSE WINDOW</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ATTENDANCE LOGS MODAL */}
+        <Modal 
+          visible={showLogsModal} 
+          animationType="fade" 
+          transparent={true} 
+          statusBarTranslucent={true}
+          onRequestClose={() => setShowLogsModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalBox, isDark && styles.modalBoxDark, { width: '95%', height: '85%' }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalHeaderText}>OFFICIAL REGISTRY LOGS</Text>
+              </View>
+              
+              <View style={[styles.calWrapper, isDark && styles.calWrapperDark]}>
+                <View style={styles.calTopRow}>
+                  <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.calNavBtn}>
+                    <Text style={styles.calNavText}>{"<"}</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.calMonthText, isDark && styles.textDark]}>
+                    {lang === 'en' ? monthNamesEn[currentMonthDate.getMonth()] : monthNamesHi[currentMonthDate.getMonth()]} {currentMonthDate.getFullYear()}
+                  </Text>
+                  <TouchableOpacity onPress={() => changeMonth(1)} style={styles.calNavBtn}>
+                    <Text style={styles.calNavText}>{">"}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.calWeekRow}>
+                  {(lang === 'en' ? weekDaysEn : weekDaysHi).map((day, idx) => (
+                    <Text key={idx} style={[styles.calWeekText, isDark && styles.textDark]}>{day}</Text>
+                  ))}
+                </View>
+
+                <View style={styles.calGrid}>
+                  {generateCalendarDays().map((item, idx) => {
+                    const isSelected = item.fullDate === selectedDate;
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        disabled={!item.day}
+                        style={[
+                          styles.calCell,
+                          isSelected && styles.calCellActive,
+                          !item.day && { backgroundColor: 'transparent', borderWidth: 0 }
+                        ]}
+                        onPress={() => item.fullDate && setSelectedDate(item.fullDate)}
+                      >
+                        <Text style={[
+                          styles.calCellText,
+                          isDark && styles.textDark,
+                          !item.day && { opacity: 0 },
+                          isSelected && styles.calCellTextActive
+                        ]}>
+                          {item.day}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TouchableOpacity 
+                  style={[styles.resetFilterBtn, !selectedDate && styles.resetFilterBtnActive]} 
+                  onPress={() => setSelectedDate(null)}
+                >
+                  <Text style={[styles.resetFilterText, !selectedDate && styles.resetFilterTextActive]}>
+                    {t.showAll} {selectedDate ? `[${selectedDate}]` : ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.tableRowHeader, isDark && styles.tableRowDark, {marginTop: 10, borderTopLeftRadius: 6, borderTopRightRadius: 6}]}>
+                <Text style={[styles.thText, {flex: 0.35}]}>IDENTITY</Text>
+                <Text style={[styles.thText, {flex: 0.25}]}>DATE</Text>
+                <Text style={[styles.thText, {flex: 0.2}]}>TIME</Text>
+                <Text style={[styles.thText, {flex: 0.2}]}>STATUS</Text>
+              </View>
+              
+              {isFetchingLogs ? (
+                 <Text style={[styles.emptyStateText, isDark && styles.textDark]}>FETCHING SECURE DATA...</Text>
+              ) : filteredLogs.length === 0 ? (
+                <Text style={[styles.emptyStateText, isDark && styles.textDark]}>NO DATA FOUND FOR QUERY.</Text>
+              ) : (
+                <FlatList 
+                  data={filteredLogs}
+                  keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
+                  renderItem={({item}) => (
+                    <View style={[styles.tableRow, isDark && styles.tableRowDark]}>
+                      <Text style={[styles.tdText, isDark && styles.textDark, {flex: 0.35}]} numberOfLines={1}>{item.logger_name.toUpperCase()}</Text>
+                      <Text style={[styles.tdText, isDark && styles.textDark, {flex: 0.25}]}>{item.log_date}</Text>
+                      <Text style={[styles.tdText, isDark && styles.textDark, {flex: 0.2}]}>{item.log_time}</Text>
+                      <Text style={[styles.tdText, {flex: 0.2, fontWeight: 'bold', color: (item.status || 'SYNCED') === 'PENDING' ? '#E53935' : '#43A047'}]}>
+                        {item.status || 'SYNCED'}
+                      </Text>
+                    </View>
+                  )}
+                />
+              )}
+              
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowLogsModal(false)}>
+                <Text style={styles.modalCloseText}>CLOSE WINDOW</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -448,95 +654,121 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#eaf2ff' },
-  
-  rootDark: { backgroundColor: '#0f172a' },
-  surfaceDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
-  cardDark: { backgroundColor: '#0f172a', borderColor: '#334155' },
-  textDark: { color: '#f8fafc' },
-  textSubDark: { color: '#94a3b8' },
-  camFrameDark: { backgroundColor: '#0f172a' },
-  inputDark: { backgroundColor: '#334155', color: '#f8fafc', borderColor: '#475569' },
-  btnOutlineDark: { backgroundColor: '#1e293b', borderColor: '#334155' },
+  root: { flex: 1, backgroundColor: '#E8F1F8' }, 
+  rootDark: { backgroundColor: '#121212' },
+  textDark: { color: '#FFFFFF' },
 
-  topbar: { backgroundColor: '#1a73e8', paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  // SPLASH SCREEN
+  splashRoot: { flex: 1, backgroundColor: '#E8F1F8', justifyContent: 'center', alignItems: 'center' },
+  splashContainer: { alignItems: 'center', padding: 20 },
+  splashLogo: { width: 140, height: 140, marginBottom: 30 },
+  splashTitle: { fontSize: 18, fontWeight: '900', color: '#1A5F9A', textAlign: 'center', letterSpacing: 1, marginBottom: 5 },
+  splashSubtitle: { fontSize: 14, fontWeight: '700', color: '#4A6582', textAlign: 'center', letterSpacing: 0.5 },
+  splashFooter: { position: 'absolute', bottom: -150, fontSize: 12, fontWeight: '700', color: '#7A93AA', letterSpacing: 2 },
+
+  // TOP NAVIGATION
+  topbar: { backgroundColor: '#1A5F9A', paddingVertical: 12, paddingHorizontal: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 4, borderBottomColor: '#FF9933' }, 
   brandContainer: { flexDirection: 'row', alignItems: 'center' },
-  menuIconBox: { marginRight: 12, padding: 4 },
-  menuIcon: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  brand: { color: '#fff', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
-  statusPill: { backgroundColor: 'rgba(255, 255, 255, 0.18)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.35)', borderRadius: 20, paddingVertical: 4, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' },
-  dot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#f87171', marginRight: 6 },
-  dotOnline: { backgroundColor: '#4ade80' },
-  statusText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  menuIconBox: { marginRight: 15, padding: 5, borderRadius: 6 },
+  menuIcon: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+  navLogo: { width: 28, height: 28, marginRight: 10, backgroundColor: '#FFFFFF', borderRadius: 14 },
+  brand: { color: '#FFFFFF', fontWeight: '900', fontSize: 14, letterSpacing: 1.2 },
+  statusBox: { borderWidth: 1, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 },
+  statusBoxOnline: { backgroundColor: '#43A047', borderColor: '#2E7D32' },
+  statusBoxOffline: { backgroundColor: '#E53935', borderColor: '#C62828' },
+  statusText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
 
-  premiumOverlay: { flex: 1, flexDirection: 'row' },
-  premiumOverlayBackground: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
-  premiumDrawer: { width: '75%', backgroundColor: '#FFFFFF', height: height, paddingTop: 60, paddingHorizontal: 24, shadowColor: '#000', shadowOffset: { width: -5, height: 0 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 },
-  premiumHeader: { fontSize: 20, fontWeight: '800', color: '#1A73E8', letterSpacing: 1.2, marginBottom: 40 },
-  premiumSection: { marginBottom: 35 },
-  premiumSectionTitle: { fontSize: 12, fontWeight: '700', color: '#707A8A', letterSpacing: 1.5, marginBottom: 12 },
-  segmentContainer: { flexDirection: 'row', backgroundColor: '#F1F3F4', borderRadius: 12, padding: 4 },
-  segmentContainerDark: { backgroundColor: '#0f172a' },
-  segmentButton: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  segmentActive: { backgroundColor: '#1A73E8', shadowColor: '#1A73E8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 },
-  segmentActiveDark: { backgroundColor: '#1A73E8', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4, elevation: 2 },
-  segmentInactive: { backgroundColor: 'transparent' },
-  segmentText: { fontSize: 14, fontWeight: '700' },
-  segmentTextActive: { color: '#FFFFFF' },
-  segmentTextInactive: { color: '#5F6368' },
+  // DRAWER SETTINGS
+  drawerOverlay: { flex: 1, flexDirection: 'row' },
+  drawerBackground: { flex: 1, backgroundColor: 'rgba(9, 20, 36, 0.6)' },
+  drawerPanel: { width: '80%', backgroundColor: '#FFFFFF', height: height, paddingTop: 40, paddingHorizontal: 20 },
+  surfaceDark: { backgroundColor: '#1E1E1E' },
+  drawerHeader: { fontSize: 16, fontWeight: '900', color: '#1A5F9A', letterSpacing: 1, marginBottom: 30, borderBottomWidth: 2, borderBottomColor: '#D0E0F0', paddingBottom: 10 },
+  drawerSection: { marginBottom: 30 },
+  drawerSectionTitle: { fontSize: 11, fontWeight: '800', color: '#4A6582', letterSpacing: 1, marginBottom: 10 },
+  radioGroup: { flexDirection: 'row', borderWidth: 1.5, borderColor: '#1A5F9A', borderRadius: 8, overflow: 'hidden' },
+  radioBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  radioBtnActive: { backgroundColor: '#1A5F9A' },
+  radioBtnInactive: { backgroundColor: '#F4F8FB' },
+  radioText: { fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  radioTextActive: { color: '#FFFFFF' },
+  radioTextInactive: { color: '#1A5F9A' },
+  
+  actionBtn: { backgroundColor: '#1A5F9A', paddingVertical: 12, alignItems: 'center', borderRadius: 8, marginBottom: 10 },
+  actionBtnDanger: { backgroundColor: '#E53935' },
+  actionBtnText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
 
-  camZone: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  camLabel: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1, alignSelf: 'flex-start', marginBottom: 10 },
-  camFrameOuter: { position: 'relative', width: 220, height: 220, marginBottom: 12 },
-  camFrame: { width: '100%', height: '100%', borderRadius: 14, backgroundColor: '#f0f7ff', borderWidth: 2.5, borderColor: '#1a73e8', overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
-  standbyText: { color: '#1a73e8', fontWeight: 'bold', letterSpacing: 2, opacity: 0.5 },
-  corner: { position: 'absolute', width: 22, height: 22, borderColor: '#1a73e8' },
-  tl: { top: -2, left: -2, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 4 },
-  tr: { top: -2, right: -2, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 4 },
-  bl: { bottom: -2, left: -2, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 4 },
-  br: { bottom: -2, right: -2, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 4 },
-  helperRow: { flexDirection: 'row', alignItems: 'center' },
-  helperDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#00bcd4', marginRight: 6 },
-  helperText: { fontSize: 11, color: '#5a6b8c' },
+  // GENERIC PANELS
+  panel: { backgroundColor: '#FFFFFF', marginHorizontal: 15, marginTop: 15, borderRadius: 8, padding: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
+  panelDark: { backgroundColor: '#1E1E1E' },
+  panelTitle: { fontSize: 12, color: '#1A5F9A', fontWeight: '900', letterSpacing: 1.2, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#D0E0F0', paddingBottom: 6 },
+  
+  // CAMERA VIEWPORT
+  camContainer: { alignItems: 'center', marginBottom: 12 },
+  camFrame: { width: 210, height: 210, backgroundColor: '#F4F8FB', borderWidth: 2, borderColor: '#1A5F9A', borderRadius: 8, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  camFrameDark: { backgroundColor: '#000000', borderColor: '#334455' },
+  standbyText: { color: '#1A5F9A', fontWeight: '900', letterSpacing: 1, opacity: 0.6 },
+  helperRow: { alignItems: 'center', backgroundColor: '#E8F1F8', paddingVertical: 6, borderRadius: 6 },
+  helperText: { fontSize: 10, color: '#1A5F9A', fontWeight: '800', letterSpacing: 1 },
 
-  promptContainer: { width: '90%', padding: 10, alignItems: 'center' },
-  promptTitle: { color: '#1a73e8', fontWeight: 'bold', fontSize: 12, marginBottom: 10, letterSpacing: 1 },
-  inputField: { width: '100%', height: 40, backgroundColor: '#fff', borderRadius: 8, color: '#0b1b3a', paddingHorizontal: 10, fontSize: 14, borderWidth: 1, borderColor: '#d0e4ff', marginBottom: 10 },
-  promptConfirmBtn: { backgroundColor: '#1a73e8', paddingVertical: 8, paddingHorizontal: 20, borderRadius: 10 },
-  promptConfirmBtnText: { color: '#fff', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
+  // PROMPT INPUT
+  promptBox: { width: '100%', padding: 10, alignItems: 'center', backgroundColor: '#FFFFFF' },
+  promptTitle: { color: '#1A5F9A', fontWeight: '900', fontSize: 11, marginBottom: 10, letterSpacing: 1 },
+  inputBox: { width: '90%', height: 40, backgroundColor: '#FFFFFF', color: '#000000', paddingHorizontal: 10, fontSize: 14, borderWidth: 1.5, borderColor: '#1A5F9A', borderRadius: 6, marginBottom: 10, textAlign: 'center' },
+  inputDark: { backgroundColor: '#333333', color: '#FFFFFF', borderColor: '#555555' },
+  confirmBtn: { backgroundColor: '#1A5F9A', paddingVertical: 8, paddingHorizontal: 20, borderRadius: 6 },
+  confirmBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 11, letterSpacing: 1 },
 
-  telemetry: { backgroundColor: '#fff', marginHorizontal: 14, marginTop: 10, borderRadius: 16, borderWidth: 1, borderColor: '#d0e4ff', padding: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  teleHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  teleTitle: { fontSize: 10, color: '#5a6b8c', fontWeight: '700', letterSpacing: 1 },
-  teleTimestamp: { fontSize: 10, color: '#94a3b8' },
-  teleGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  teleCard: { width: '48%', backgroundColor: '#f7fbff', borderRadius: 8, borderWidth: 1, borderColor: '#dbeafe', padding: 6, marginBottom: 5 },
-  teleCardLabel: { fontSize: 8, color: '#5a6b8c', letterSpacing: 0.5, marginBottom: 1 },
-  teleCardValue: { fontSize: 11, fontWeight: '700' },
-  valBlue: { color: '#1a73e8' },
-  valTeal: { color: '#00bcd4' },
-  valGreen: { color: '#10b981' },
-  valAmber: { color: '#f59e0b' },
-  teleCardSub: { fontSize: 7, color: '#94a3b8', marginTop: 1 },
+  // TELEMETRY
+  teleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#D0E0F0', paddingBottom: 6 },
+  teleTime: { fontSize: 10, fontWeight: 'bold', color: '#7A93AA' },
+  dataGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  dataCell: { width: '48%', backgroundColor: '#F8FBFF', borderWidth: 1, borderColor: '#D0E0F0', padding: 10, marginBottom: 8, borderRadius: 6 },
+  dataCellDark: { backgroundColor: '#121212', borderColor: '#333333' },
+  dataLabel: { fontSize: 9, color: '#4A6582', fontWeight: '800', letterSpacing: 1, marginBottom: 4 },
+  dataValue: { fontSize: 11, fontWeight: '900', color: '#1A5F9A' },
 
-  actions: { marginHorizontal: 14, marginTop: 10, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  btn: { width: '48%', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 8, flexDirection: 'column', alignItems: 'center', marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3 },
-  btnBlue: { backgroundColor: '#1a73e8' },
-  btnTeal: { backgroundColor: '#00bcd4' },
-  btnOutline: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#1a73e8', elevation: 0 },
-  btnDark: { backgroundColor: '#0b1b3a' },
-  btnIcon: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  btnLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.2 },
-  btnSub: { fontSize: 9, opacity: 0.7 },
+  // BUTTONS
+  commandGrid: { marginHorizontal: 15, marginTop: 15, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  cmdBtnSolid: { width: '48%', backgroundColor: '#1A5F9A', paddingVertical: 14, alignItems: 'center', marginBottom: 10, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  cmdBtnOutline: { width: '48%', backgroundColor: '#F4F8FB', paddingVertical: 14, alignItems: 'center', marginBottom: 10, borderWidth: 1.5, borderColor: '#1A5F9A', borderRadius: 8 },
+  cmdBtnOutlineDark: { backgroundColor: '#1E1E1E', borderColor: '#555555' },
+  cmdBtnText: { fontSize: 11, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.5 },
+  cmdBtnTextOutline: { fontSize: 11, fontWeight: '900', color: '#1A5F9A', letterSpacing: 0.5 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(11, 27, 58, 0.8)', justifyContent: 'flex-start', alignItems: 'flex-start' },
-  modalContent: { width: '85%', height: '60%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#d0e4ff', borderRadius: 16, padding: 20, alignSelf: 'center', marginTop: '30%', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 15 },
-  modalTitle: { color: '#1a73e8', fontSize: 16, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginBottom: 20 },
-  tableHeader: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#dbeafe', paddingBottom: 10, marginBottom: 10 },
-  tableHeaderText: { color: '#5a6b8c', fontWeight: 'bold', fontSize: 11, letterSpacing: 1 },
-  tableRow: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f7ff' },
-  tableCellText: { color: '#0b1b3a', fontSize: 13 },
-  emptyText: { color: '#94a3b8', textAlign: 'center', marginTop: 40, fontStyle: 'italic' },
-  closeModalBtn: { backgroundColor: '#eaf2ff', padding: 15, borderRadius: 10, marginTop: 'auto', alignItems: 'center', borderWidth: 1, borderColor: '#d0e4ff' },
-  closeModalBtnText: { color: '#1a73e8', fontWeight: 'bold', letterSpacing: 1 }
+  // MODALS & TABLES
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(9, 20, 36, 0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalBox: { width: '90%', height: '70%', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 10 },
+  modalBoxDark: { backgroundColor: '#1E1E1E' },
+  modalHeader: { backgroundColor: '#1A5F9A', paddingVertical: 12, marginBottom: 10, alignItems: 'center', borderRadius: 6 },
+  modalHeaderText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900', letterSpacing: 1.5 },
+  
+  tableRowHeader: { flexDirection: 'row', backgroundColor: '#E8F1F8', paddingVertical: 10, paddingHorizontal: 8, borderBottomWidth: 2, borderBottomColor: '#1A5F9A' },
+  tableRow: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#D0E0F0' },
+  tableRowDark: { backgroundColor: '#1E1E1E', borderBottomColor: '#333333' },
+  thText: { fontSize: 10, fontWeight: '900', color: '#1A5F9A', letterSpacing: 0.5 },
+  tdText: { fontSize: 11, fontWeight: '700', color: '#333333' },
+  emptyStateText: { textAlign: 'center', marginTop: 40, fontSize: 12, fontWeight: '800', color: '#7A93AA', letterSpacing: 1 },
+  
+  modalCloseBtn: { backgroundColor: '#F4F8FB', padding: 14, marginTop: 'auto', alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: '#D0E0F0' },
+  modalCloseText: { color: '#1A5F9A', fontWeight: '900', letterSpacing: 1.2, fontSize: 11 },
+
+  // CALENDAR GRID
+  calWrapper: { borderWidth: 1, borderColor: '#D0E0F0', padding: 8, backgroundColor: '#F8FBFF', borderRadius: 8 },
+  calWrapperDark: { borderColor: '#333333', backgroundColor: '#121212' },
+  calTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1A5F9A', paddingVertical: 8, marginBottom: 8, borderRadius: 6 },
+  calNavBtn: { paddingHorizontal: 20 },
+  calNavText: { color: '#FFFFFF', fontWeight: '900', fontSize: 16 },
+  calMonthText: { color: '#FFFFFF', fontWeight: '900', fontSize: 12, letterSpacing: 1 },
+  calWeekRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#D0E0F0', paddingBottom: 4, marginBottom: 4 },
+  calWeekText: { width: `${100 / 7}%`, textAlign: 'center', fontSize: 9, fontWeight: '900', color: '#4A6582' },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: { width: `${100 / 7}%`, aspectRatio: 1.5, justifyContent: 'center', alignItems: 'center', borderRadius: 4, marginVertical: 1 },
+  calCellActive: { backgroundColor: '#1A5F9A' },
+  calCellText: { fontSize: 11, fontWeight: '800', color: '#4A6582' },
+  calCellTextActive: { color: '#FFFFFF' },
+  resetFilterBtn: { marginTop: 8, paddingVertical: 10, alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D0E0F0', borderRadius: 6 },
+  resetFilterBtnActive: { backgroundColor: '#1A5F9A', borderColor: '#1A5F9A' },
+  resetFilterText: { fontSize: 10, fontWeight: '900', color: '#1A5F9A', letterSpacing: 1 },
+  resetFilterTextActive: { color: '#FFFFFF' }
 });

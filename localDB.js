@@ -120,3 +120,21 @@ export function getThemeSetting() {
   }
   return false;
 }
+export const getAllAttendanceLogs = () => {
+  try {
+    const result = db.execute("SELECT * FROM attendance_logs ORDER BY id DESC;");
+    let logs = [];
+    if (result.rows) {
+      const len = result.rows.length || 0;
+      for (let i = 0; i < len; i++) {
+        logs.push(result.rows.item ? result.rows.item(i) : result.rows[i]);
+      }
+    }
+    return logs;
+  } catch (error) {
+    return [];
+  }
+};
+export const markLogsAsSynced = () => {
+  db.execute("UPDATE attendance_logs SET status = 'SYNCED' WHERE status = 'PENDING';");
+};

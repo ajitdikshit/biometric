@@ -1,7 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
-import { getPendingCount, getAllPendingLogs, clearSyncedLogs } from './localDB';
+import { getPendingCount, getAllPendingLogs, clearSyncedLogs, markLogsAsSynced } from './localDB';
 import { SUPABASE_URL, SUPABASE_KEY } from '@env';
-
 
 const INTEGRATION_HEADERS = {
   'Content-Type': 'application/json',
@@ -10,6 +9,8 @@ const INTEGRATION_HEADERS = {
 };
 
 export const syncAndPurgeLogs = async (updateCountStateCallback, systemLogCallback) => {
+  // 🚨 REMOVED markLogsAsSynced() from here!
+  
   const count = getPendingCount();
   if (count === 0) return;
 
@@ -30,7 +31,8 @@ export const syncAndPurgeLogs = async (updateCountStateCallback, systemLogCallba
     });
 
     if (response.ok) {
-      clearSyncedLogs();
+      
+      markLogsAsSynced(); 
       updateCountStateCallback(0); 
       if (systemLogCallback) systemLogCallback(`✅ Sync with Supabase completed`);
     } else {
@@ -99,6 +101,26 @@ export const restoreIdentitiesFromCloud = async (restoreCallback, systemLogCallb
     }
   } catch (error) {
     if (systemLogCallback) systemLogCallback(`⚠️ Restore Failed: Supabase Unreachable.`);
+    return [];
+  }
+};
+
+export const fetchAllCloudLogs = async (setSystemLog) => {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance_logs?select=*&order=id.desc`, {
+      method: 'GET',
+      headers: INTEGRATION_HEADERS
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data || [];
+    } else {
+      if (setSystemLog) setSystemLog('❌ Cloud fetch failed.');
+      return [];
+    }
+  } catch (error) {
+    if (setSystemLog) setSystemLog('⚠️ Cloud fetch error.');
     return [];
   }
 };
